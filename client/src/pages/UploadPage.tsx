@@ -53,8 +53,6 @@ const UploadPage = () => {
     setRowsPerSecond(0);
     setLoading(true);
 
-    // Join the progress room before the upload starts so no early events
-    // are missed once the server begins streaming the file.
     joinRoom(clientUploadId);
 
     try {
@@ -88,83 +86,111 @@ const UploadPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
-      <div className="mx-auto max-w-6xl rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Upload Dataset</p>
-            <h1 className="mt-3 text-4xl font-semibold">Stream large CSV or JSON files with confidence.</h1>
+      <div className="mx-auto max-w-7xl space-y-8">
+        <section className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Upload dataset</p>
+              <h1 className="mt-3 text-4xl font-semibold text-white">Enterprise-grade data ingestion with end-to-end visibility.</h1>
+              <p className="mt-4 text-slate-400">
+                Upload large CSV or JSON files using a secure, streamed ingestion channel designed for modern data teams.
+              </p>
+            </div>
+            <button onClick={() => navigate('/dashboard')} className="inline-flex items-center justify-center rounded-full border border-white/10 bg-slate-800/90 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700">
+              Back to dashboard
+            </button>
           </div>
-          <button onClick={() => navigate('/dashboard')} className="rounded-full border border-white/10 bg-slate-800/80 px-5 py-3 text-sm text-slate-200 transition hover:bg-slate-700">
-            Back to Dashboard
-          </button>
-        </div>
+        </section>
 
-        <div className="mt-10 rounded-[28px] border border-white/10 bg-slate-950/70 p-8">
-          <div {...getRootProps()} className="min-h-[260px] rounded-[24px] border-2 border-dashed border-cyan-500/30 bg-slate-900/60 p-10 text-center transition hover:border-cyan-400 hover:bg-slate-900">
-            <input {...getInputProps()} />
-            <p className="text-xl font-semibold text-slate-100">
-              {isDragActive ? 'Drop your dataset here' : 'Drag & drop a CSV or JSON file, or click to browse'}
-            </p>
-            <p className="mt-3 text-sm text-slate-400">Support for files up to 500MB in streaming mode.</p>
+        <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+          <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
+            <div {...getRootProps()} className="min-h-[280px] rounded-[28px] border-2 border-dashed border-cyan-500/30 bg-slate-950/80 p-10 text-center transition hover:border-cyan-400 hover:bg-slate-900">
+              <input {...getInputProps()} />
+              <p className="text-xl font-semibold text-white">{isDragActive ? 'Drop your dataset here' : 'Drag & drop a CSV or JSON file, or click to browse'}</p>
+              <p className="mt-3 text-sm text-slate-400">Accepted formats: CSV, JSON. Streaming mode protects RAM and scales effortlessly.</p>
+            </div>
+
+            {error && <div className="mt-6 rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_0.8fr]">
+              <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Upload status</p>
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-900/80 text-lg font-semibold text-cyan-300">{progress}%</div>
+                  <div>
+                    <p className="text-sm text-slate-300">Live ingestion</p>
+                    <p className="mt-2 text-xl font-semibold text-white">{loading ? 'Processing' : fileName ? 'Ready' : 'Waiting'}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Performance</p>
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  <div className="flex items-center justify-between"><span>Rows processed</span><span>{rowsProcessed.toLocaleString()}</span></div>
+                  <div className="flex items-center justify-between"><span>Rows/sec</span><span>{rowsPerSecond.toLocaleString()}</span></div>
+                  <div className="flex items-center justify-between"><span>Validation flags</span><span className="text-rose-300">{rowsFailed.toLocaleString()}</span></div>
+                </div>
+              </div>
+            </div>
+
+            {fileName && !loading && (
+              <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+                  <p className="text-sm text-slate-400">Current file</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{fileName}</p>
+                </div>
+                <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+                  <p className="text-sm text-slate-400">Total rows</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{totalRows ?? '—'}</p>
+                </div>
+                <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+                  <p className="text-sm text-slate-400">Preview rows</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{preview.length}</p>
+                </div>
+              </div>
+            )}
+
+            {uploadId && !loading && (
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button onClick={() => navigate(`/mapping?uploadId=${uploadId}`)} className="rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400">
+                  Continue to mapping
+                </button>
+              </div>
+            )}
           </div>
 
-          {error && <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-200">{error}</div>}
-
-          {loading && (
-            <div className="mt-6 rounded-3xl border border-white/10 bg-slate-900/70 p-5">
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Processing file…</span>
-                <span>{progress}%</span>
+          <aside className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
+            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Upload intelligence</p>
+            <h2 className="mt-3 text-2xl font-semibold text-white">Premium ingestion controls</h2>
+            <p className="mt-4 text-slate-400">Keep your enterprise pipeline transparent, efficient, and resilient with advanced monitoring and secure staging.</p>
+            <div className="mt-6 space-y-4 text-sm text-slate-300">
+              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
+                <p className="font-semibold text-white">Instant preview</p>
+                <p className="mt-2 text-slate-400">See the first rows immediately after upload so mapping can start without delay.</p>
               </div>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                <div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${progress}%` }} />
+              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
+                <p className="font-semibold text-white">Streamed processing</p>
+                <p className="mt-2 text-slate-400">Large files are streamed end-to-end, avoiding memory issues and keeping UI latency low.</p>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-4 text-sm text-slate-300">
-                <div><p className="text-slate-500">Rows processed</p><p className="text-lg font-semibold text-white">{rowsProcessed.toLocaleString()}</p></div>
-                <div><p className="text-slate-500">Rows/sec</p><p className="text-lg font-semibold text-white">{rowsPerSecond.toLocaleString()}</p></div>
-                <div><p className="text-slate-500">Validation flags</p><p className="text-lg font-semibold text-white">{rowsFailed.toLocaleString()}</p></div>
-              </div>
-            </div>
-          )}
-
-          {fileName && !loading && (
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5">
-                <p className="text-sm text-slate-400">File</p>
-                <p className="mt-2 text-lg font-semibold text-white">{fileName}</p>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5">
-                <p className="text-sm text-slate-400">Total Rows</p>
-                <p className="mt-2 text-lg font-semibold text-white">{totalRows ?? '—'}</p>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5">
-                <p className="text-sm text-slate-400">Preview Rows</p>
-                <p className="mt-2 text-lg font-semibold text-white">{preview.length}</p>
+              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
+                <p className="font-semibold text-white">Secure staging</p>
+                <p className="mt-2 text-slate-400">Files are handled safely before transformation and can be routed to your secure storage layer.</p>
               </div>
             </div>
-          )}
 
-          {uploadId && !loading && (
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button onClick={() => navigate(`/mapping?uploadId=${uploadId}`)} className="rounded-full bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400">
-                Continue to Mapping
-              </button>
-            </div>
-          )}
-
-          {preview.length > 0 && (
-            <div className="mt-8 overflow-hidden rounded-[24px] border border-white/10 bg-slate-900/80">
-              <div className="grid min-w-full grid-cols-[1.2fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/70 px-4 py-3 text-sm uppercase tracking-[0.18em] text-slate-400">
-                {columns.slice(0, 4).map((column) => (
-                  <div key={column}>{column}</div>
-                ))}
+            {preview.length > 0 && (
+              <div className="mt-8 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/80">
+                <div className="grid min-w-full grid-cols-[1.2fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/70 px-4 py-3 text-sm uppercase tracking-[0.18em] text-slate-400">
+                  {columns.slice(0, 4).map((column) => (
+                    <div key={column}>{column}</div>
+                  ))}
+                </div>
+                <List height={260} itemCount={Math.min(preview.length, 6)} itemSize={44} width="100%">
+                  {Row}
+                </List>
               </div>
-              {/* Virtualized: only the rows currently on screen are ever mounted in the DOM. */}
-              <List height={384} itemCount={preview.length} itemSize={44} width="100%">
-                {Row}
-              </List>
-            </div>
-          )}
+            )}
+          </aside>
         </div>
       </div>
     </div>

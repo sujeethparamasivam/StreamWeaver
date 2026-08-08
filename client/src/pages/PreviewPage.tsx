@@ -35,13 +35,26 @@ const PreviewPage = () => {
     );
   };
 
+  const totals = useMemo(() => ({
+    rows: rows.length,
+    columns: columns.length
+  }), [rows, columns]);
+
   return (
-    <div className="space-y-6">
-      <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8">
-        <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Dataset Preview</p>
-        <h1 className="mt-3 text-3xl font-semibold">Preview imported rows from MongoDB</h1>
-        <p className="mt-3 text-slate-400">This table shows the transformed records from the last import, rendered with a virtualized grid so large datasets stay smooth to scroll.</p>
-      </div>
+    <div className="space-y-8">
+      <section className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Dataset preview</p>
+            <h1 className="mt-3 text-4xl font-semibold text-white">Inspect transformed output before final import.</h1>
+            <p className="mt-4 text-slate-400">Validate field transformations and confirm data shape with a clean, enterprise-quality preview experience.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Rows visible: {totals.rows}</div>
+            <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Columns shown: {totals.columns}</div>
+          </div>
+        </div>
+      </section>
 
       {loading && <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 text-slate-300">Loading preview...</div>}
       {error && <div className="rounded-[32px] border border-rose-400/20 bg-rose-500/10 p-6 text-rose-200">{error}</div>}
@@ -51,8 +64,8 @@ const PreviewPage = () => {
       )}
 
       {!loading && rows.length > 0 && (
-        <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80">
-          <div className="grid min-w-full grid-cols-[1.4fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/70 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
+        <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
+          <div className="grid min-w-full grid-cols-[1.4fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
             {columns.slice(0, 4).map((column) => (
               <div key={column}>{column}</div>
             ))}

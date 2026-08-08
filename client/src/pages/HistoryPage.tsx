@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 
 interface ImportJob {
@@ -32,28 +32,34 @@ const HistoryPage = () => {
     void loadHistory();
   }, []);
 
-  const totalRows = jobs.reduce((sum, job) => sum + job.totalRows, 0);
+  const totalRows = useMemo(() => jobs.reduce((sum, job) => sum + job.totalRows, 0), [jobs]);
+  const latestJob = jobs[0];
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8">
-        <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Import History</p>
-        <h1 className="mt-3 text-3xl font-semibold">Track every dataset import.</h1>
-        <p className="mt-3 text-slate-400">Review the latest ingestion jobs, status, and row counts from your ETL pipeline.</p>
-      </div>
+    <div className="space-y-8">
+      <section className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Import history</p>
+            <h1 className="mt-3 text-4xl font-semibold text-white">Track every dataset import.</h1>
+            <p className="mt-4 text-slate-400">Review the timeline of ingestion jobs, status, and row counts with enterprise-level audit visibility.</p>
+          </div>
+          <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">Clean, high-end history analytics</div>
+        </div>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-3">
-        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6">
-          <p className="text-sm text-slate-400">Import Jobs</p>
+        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
+          <p className="text-sm text-slate-400">Import jobs</p>
           <p className="mt-3 text-4xl font-semibold text-white">{jobs.length}</p>
         </div>
-        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6">
-          <p className="text-sm text-slate-400">Rows Ingested</p>
-          <p className="mt-3 text-4xl font-semibold text-white">{totalRows}</p>
+        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
+          <p className="text-sm text-slate-400">Rows ingested</p>
+          <p className="mt-3 text-4xl font-semibold text-white">{totalRows.toLocaleString()}</p>
         </div>
-        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6">
-          <p className="text-sm text-slate-400">Last Updated</p>
-          <p className="mt-3 text-4xl font-semibold text-white">{jobs[0] ? new Date(jobs[0].createdAt).toLocaleDateString() : '—'}</p>
+        <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
+          <p className="text-sm text-slate-400">Last updated</p>
+          <p className="mt-3 text-4xl font-semibold text-white">{latestJob ? new Date(latestJob.createdAt).toLocaleDateString() : '—'}</p>
         </div>
       </div>
 
@@ -65,15 +71,15 @@ const HistoryPage = () => {
       )}
 
       {!loading && jobs.length > 0 && (
-        <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80">
-          <div className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-4 border-b border-white/10 bg-slate-950/70 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
+        <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
+          <div className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
             <div>Dataset</div>
             <div>Status</div>
             <div>Rows</div>
             <div>Failed</div>
             <div>Started</div>
           </div>
-          <div className="max-h-[520px] overflow-auto px-4 py-4">
+          <div className="max-h-[560px] overflow-auto px-4 py-4">
             {jobs.map((job) => (
               <div key={job.uploadId} className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-4 border-b border-white/10 py-3 text-sm text-slate-200 last:border-b-0">
                 <div className="truncate">{job.fileName}</div>
@@ -82,8 +88,8 @@ const HistoryPage = () => {
                     {job.status}
                   </span>
                 </div>
-                <div>{job.totalRows}</div>
-                <div>{job.failedRows}</div>
+                <div>{job.totalRows.toLocaleString()}</div>
+                <div>{job.failedRows.toLocaleString()}</div>
                 <div>{job.startedAt ? new Date(job.startedAt).toLocaleDateString() : '—'}</div>
               </div>
             ))}
