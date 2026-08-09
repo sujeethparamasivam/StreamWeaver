@@ -12,6 +12,29 @@ const DEFAULT_MAPPING: MappingState = {
   signupDate: { source: 'created_at' }
 };
 
+const guessSourceField = (previewFields: string[], candidates: string[]) => {
+  const normalized = previewFields.map((field) => field.toLowerCase());
+  return candidates.find((candidate) => normalized.includes(candidate.toLowerCase())) ?? '';
+};
+
+const inferMappingFromPreview = (previewFields: string[]): MappingState => {
+  if (!previewFields.length) return DEFAULT_MAPPING;
+
+  return {
+    userId: { source: guessSourceField(previewFields, ['userId', 'userid', 'id', 'user_id']) || 'id' },
+    fullName: {
+      source:
+        guessSourceField(previewFields, ['fullName', 'fullname', 'name', 'full_name', 'first_name', 'firstName']) || 'name'
+    },
+    emailAddress: {
+      source: guessSourceField(previewFields, ['email', 'emailAddress', 'email_address']) || 'email'
+    },
+    signupDate: {
+      source: guessSourceField(previewFields, ['created_at', 'createdAt', 'signupDate', 'signup_date']) || 'created_at'
+    }
+  };
+};
+
 const normalizeMapping = (raw: unknown): MappingState => {
   if (!raw || typeof raw !== 'object') return DEFAULT_MAPPING;
   const entries = Object.entries(raw as Record<string, unknown>);
@@ -23,6 +46,32 @@ const normalizeMapping = (raw: unknown): MappingState => {
     } else if (value && typeof value === 'object' && 'source' in value) {
       acc[dest] = value as MappingEntry;
     }
+    return acc;
+  }, {});
+};
+
+const FIELD_CANDIDATES: Record<string, string[]> = {
+  userId: ['userId', 'userid', 'id', 'user_id'],
+  fullName: ['fullName', 'fullname', 'name', 'full_name', 'first_name', 'firstName'],
+  emailAddress: ['email', 'emailAddress', 'email_address', 'email_address'],
+  signupDate: ['created_at', 'createdAt', 'signupDate', 'signup_date', 'created_on', 'createdAt']
+};
+
+const resolveMappingSources = (mapping: MappingState, previewFields: string[]): MappingState => {
+  const normalizedPreview = previewFields.map((field) => field.toLowerCase());
+
+  return Object.entries(mapping).reduce<MappingState>((acc, [dest, entry]) => {
+    const currentSource = entry.source?.trim() ?? '';
+    const hasSourceInPreview = currentSource && normalizedPreview.includes(currentSource.toLowerCase());
+
+    if (hasSourceInPreview) {
+      acc[dest] = entry;
+      return acc;
+    }
+
+    const candidates = FIELD_CANDIDATES[dest] ?? previewFields;
+    const fallbackSource = candidates.find((candidate) => normalizedPreview.includes(candidate.toLowerCase()));
+    acc[dest] = { ...entry, source: fallbackSource ?? currentSource };
     return acc;
   }, {});
 };
@@ -48,10 +97,17 @@ const MappingPage = () => {
         const mappingPromise = idFromQuery ? api.get(`/imports/${idFromQuery}`) : Promise.resolve({ data: { job: null } });
 
         const [previewResponse, mappingResponse] = await Promise.all([previewPromise, mappingPromise]);
-        setPreview((previewResponse.data.rows ?? []).map((r: { data: Record<string, unknown> }) => r.data ?? r));
+        const uploadedPreview = (previewResponse.data.rows ?? []).map((r: { data: Record<string, unknown> }) => r.data ?? r);
+        setPreview(uploadedPreview);
 
         const mappingFromJob = mappingResponse.data.job?.mapping;
-        setMapping(normalizeMapping(mappingFromJob));
+        const previewFields = uploadedPreview.length ? Array.from(new Set(uploadedPreview.flatMap(Object.keys))) : [];
+
+        if (mappingFromJob && Object.keys(mappingFromJob).length) {
+          setMapping(resolveMappingSources(normalizeMapping(mappingFromJob), previewFields));
+        } else {
+          setMapping(inferMappingFromPreview(previewFields));
+        }
       } catch (err) {
         setError('Unable to load import mapping data.');
       } finally {
@@ -63,9 +119,10 @@ const MappingPage = () => {
   }, [searchParams]);
 
   const sourceFields = useMemo(() => {
-    if (!preview.length) return [];
-    return Object.keys(preview[0]);
-  }, [preview]);
+    const previewFields = preview.flatMap((row) => Object.keys(row));
+    const mappingFields = Object.values(mapping).map((entry) => entry.source).filter(Boolean);
+    return Array.from(new Set([...previewFields, ...mappingFields]));
+  }, [preview, mapping]);
 
   const sampleRow = preview[0] ?? {};
 

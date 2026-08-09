@@ -50,14 +50,14 @@ const validateRow = (row: Record<string, unknown>, uploadId: string, rowNumber: 
 };
 
 /** Bulk-write a batch of parsed rows (+ their validation issues) in one round trip each. */
-const writeBatch = async (batch: NumberedRecord[], fileName: string, uploadId: string) => {
+const writeBatch = async (batch: NumberedRecord[], fileName: string, uploadId: string, owner?: string) => {
   const rowOps = batch.map(({ rowNumber, data }) => ({
-    insertOne: { document: { uploadId, fileName, rowNumber, data } }
+    insertOne: { document: { uploadId, fileName, rowNumber, data, createdBy: owner } }
   }));
 
-  const validationDocs = batch.flatMap(({ rowNumber, data }) => validateRow(data, uploadId, rowNumber));
-
-  await UploadRow.bulkWrite(rowOps, { ordered: false });
+  const validationDocs = batch.flatMap(({ rowNumber, data }) =>
+    validateRow(data, uploadId, rowNumber).map((doc) => ({ ...doc, createdBy: owner }))
+  );
   if (validationDocs.length) {
     await ValidationRecord.bulkWrite(
       validationDocs.map((doc) => ({ insertOne: { document: doc } })),
@@ -106,13 +106,14 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
     });
   };
 
+  const owner = req.user?.email ?? req.user?.id;
   const job = await ImportJob.create({
     uploadId,
     fileName,
     status: 'processing',
     totalRows: 0,
     failedRows: 0,
-    createdBy: req.user?.id,
+    createdBy: owner,
     startedAt: new Date()
   });
 
@@ -139,7 +140,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
     const batched = numbered.pipe(new BatchTransformStream(BATCH_SIZE));
 
     for await (const batch of batched as AsyncIterable<NumberedRecord[]>) {
-      const result = await writeBatch(batch, fileName, uploadId);
+      const result = await writeBatch(batch, fileName, uploadId, owner);
       totalRows += batch.length;
       failedRows += result.failedRows;
       if (firstRecords.length < 20) firstRecords.push(...batch.slice(0, 20 - firstRecords.length).map((r) => r.data));
@@ -155,7 +156,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
       finishedAt: new Date()
     });
 
-    res.json({ message: 'File processed', fileName, total: totalRows, failedRows, preview: firstRecords, uploadId });
+    res.json({ message: 'File processed', fileName, total: totalRows, totalRows, failedRows, preview: firstRecords, uploadId });
   } catch (error) {
     await ImportJob.findByIdAndUpdate(job._id, { status: 'failed', totalRows, failedRows, finishedAt: new Date() });
     if (io) io.to(uploadId).emit('import-progress', { uploadId, progress: 100, rowsProcessed: totalRows, rowsFailed: failedRows, error: String(error) });

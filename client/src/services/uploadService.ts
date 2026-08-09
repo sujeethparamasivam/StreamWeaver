@@ -4,6 +4,7 @@ export interface UploadResult {
   message: string;
   fileName: string;
   total: number;
+  totalRows?: number;
   failedRows?: number;
   preview: Array<Record<string, unknown>>;
   uploadId: string;

@@ -7,6 +7,7 @@ export interface IValidationRecord extends Document {
   message: string;
   severity: 'warning' | 'error';
   data: Record<string, unknown>;
+  createdBy?: string;
 }
 
 const validationRecordSchema = new Schema<IValidationRecord>(
@@ -16,7 +17,8 @@ const validationRecordSchema = new Schema<IValidationRecord>(
     field: { type: String, required: true },
     message: { type: String, required: true },
     severity: { type: String, enum: ['warning', 'error'], default: 'error' },
-    data: { type: Schema.Types.Mixed, required: true }
+    data: { type: Schema.Types.Mixed, required: true },
+    createdBy: { type: String, required: false, index: true }
   },
   { timestamps: true }
 );

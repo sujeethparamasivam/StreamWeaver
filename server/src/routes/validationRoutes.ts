@@ -1,15 +1,16 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import ValidationRecord from '../models/ValidationRecord';
-import { requireAuth } from '../middleware/authMiddleware';
+import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 
 const router = Router();
 router.use(requireAuth);
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: AuthedRequest, res: Response) => {
   const { uploadId } = req.query;
 
   try {
-    const query: any = {};
+    const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
+    const query: any = owners.length ? { createdBy: { $in: owners } } : {};
     if (typeof uploadId === 'string') {
       query.uploadId = uploadId;
     }

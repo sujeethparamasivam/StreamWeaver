@@ -48,11 +48,20 @@ registerSocketHandlers(io);
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
+const validateMongoWrite = async () => {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('MongoDB connection not available');
+  const testCollection = db.collection('streamweaver_write_check');
+  const result = await testCollection.insertOne({ check: true, createdAt: new Date() });
+  await testCollection.deleteOne({ _id: result.insertedId });
+};
+
 const startServer = async () => {
   try {
     if (MONGO_URI) {
       await mongoose.connect(MONGO_URI);
       console.log('MongoDB connected using environment URI');
+      await validateMongoWrite();
     } else {
       const mongodb = await MongoMemoryServer.create();
       const uri = mongodb.getUri();
@@ -60,7 +69,16 @@ const startServer = async () => {
       console.log('MongoDB connected using embedded memory server');
     }
   } catch (error) {
-    console.warn('MongoDB unavailable, continuing with local auth fallback:', error);
+    console.warn('MongoDB unavailable or not writable, continuing with local auth fallback:', error);
+    try {
+      await mongoose.disconnect();
+    } catch {
+      // ignore
+    }
+    const mongodb = await MongoMemoryServer.create();
+    const uri = mongodb.getUri();
+    await mongoose.connect(uri);
+    console.log('MongoDB connected using embedded memory server');
   }
 
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

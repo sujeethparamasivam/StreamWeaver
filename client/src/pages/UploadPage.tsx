@@ -59,7 +59,7 @@ const UploadPage = () => {
       const response = await uploadFile(file, clientUploadId);
       setFileName(response.fileName);
       setUploadId(response.uploadId ?? clientUploadId);
-      setTotalRows(response.total);
+      setTotalRows(response.total ?? response.totalRows ?? null);
       setPreview(response.preview ?? []);
       setProgress(100);
     } catch (err) {

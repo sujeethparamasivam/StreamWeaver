@@ -8,8 +8,8 @@ const memoryUsers: Array<{ id: string; name: string; email: string; password: st
 
 const isEmailValid = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-const createToken = (user: { id: string; role: 'user' | 'admin' }) => {
-  return jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '7d' });
+const createToken = (user: { id: string; role: 'user' | 'admin'; email: string }) => {
+  return jwt.sign({ id: user.id, role: user.role, email: user.email }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '7d' });
 };
 
 router.post('/register', async (req, res) => {
@@ -36,7 +36,7 @@ router.post('/register', async (req, res) => {
       return fallbackUser;
     });
 
-    const token = createToken({ id: (user as any)._id ? String((user as any)._id) : (user as any).id, role: (user as any).role || 'user' });
+    const token = createToken({ id: (user as any)._id ? String((user as any)._id) : (user as any).id, role: (user as any).role || 'user', email: (user as any).email || email });
     res.status(201).json({ token, user: { id: (user as any)._id ? String((user as any)._id) : (user as any).id, name: (user as any).name || name, email: (user as any).email || email, role: (user as any).role || 'user' } });
   } catch (error) {
     res.status(500).json({ message: 'Registration failed' });
@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
 
-    const token = createToken({ id: (user as any)._id ? String((user as any)._id) : user.id, role: (user as any).role || 'user' });
+    const token = createToken({ id: (user as any)._id ? String((user as any)._id) : user.id, role: (user as any).role || 'user', email: (user as any).email });
     res.json({ token, user: { id: (user as any)._id ? String((user as any)._id) : user.id, name: user.name, email: user.email, role: (user as any).role || 'user' } });
   } catch (error) {
     res.status(500).json({ message: 'Login failed' });

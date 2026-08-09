@@ -1,14 +1,15 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import TransformedRow from '../models/TransformedRow';
 import ImportJob from '../models/ImportJob';
-import { requireAuth } from '../middleware/authMiddleware';
+import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 
 const router = Router();
 router.use(requireAuth);
 
-router.get('/latest', async (req, res) => {
+router.get('/latest', async (req: AuthedRequest, res: Response) => {
   try {
-    const job = await ImportJob.findOne().sort({ createdAt: -1 }).lean();
+    const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
+    const job = await ImportJob.findOne(owners.length ? { createdBy: { $in: owners } } : {}).sort({ createdAt: -1 }).lean();
     if (!job) return res.status(404).json({ message: 'No imports found' });
 
     const rows = await TransformedRow.find({ uploadId: job.uploadId }).sort({ rowNumber: 1 }).limit(100).lean();
@@ -18,9 +19,13 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-router.get('/:uploadId', async (req, res) => {
+router.get('/:uploadId', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
+    const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
+    const job = await ImportJob.findOne(owners.length ? { uploadId, createdBy: { $in: owners } } : { uploadId }).lean();
+    if (!job) return res.status(404).json({ message: 'Import not found' });
+
     const rows = await TransformedRow.find({ uploadId }).sort({ rowNumber: 1 }).limit(100).lean();
     res.json({ rows });
   } catch (error) {

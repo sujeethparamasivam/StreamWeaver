@@ -1,8 +1,8 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import ImportJob from '../models/ImportJob';
 import UploadRow from '../models/UploadRow';
 import TransformedRow from '../models/TransformedRow';
-import { requireAuth } from '../middleware/authMiddleware';
+import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 import { runTransform } from '../services/sandboxService';
 
 const router = Router();
@@ -10,18 +10,23 @@ router.use(requireAuth);
 
 type MappingEntry = string | { source: string; transformCode?: string };
 
-router.get('/', async (req, res) => {
+const createJobFilter = (userEmail?: string, userId?: string) => {
+  const owners = [userEmail, userId].filter(Boolean) as string[];
+  return owners.length ? { createdBy: { $in: owners } } : {};
+};
+
+router.get('/', async (req: AuthedRequest, res: Response) => {
   try {
-    const jobs = await ImportJob.find().sort({ createdAt: -1 }).limit(50).lean();
+    const jobs = await ImportJob.find(createJobFilter(req.user?.email)).sort({ createdAt: -1 }).limit(50).lean();
     res.json({ jobs });
   } catch (error) {
     res.status(500).json({ message: 'Could not load import history', error: String(error) });
   }
 });
 
-router.get('/latest', async (req, res) => {
+router.get('/latest', async (req: AuthedRequest, res: Response) => {
   try {
-    const job = await ImportJob.findOne().sort({ createdAt: -1 }).lean();
+    const job = await ImportJob.findOne(createJobFilter(req.user?.email)).sort({ createdAt: -1 }).lean();
     if (!job) return res.status(404).json({ message: 'No imports found' });
     res.json({ job });
   } catch (error) {
@@ -29,10 +34,10 @@ router.get('/latest', async (req, res) => {
   }
 });
 
-router.get('/:uploadId', async (req, res) => {
+router.get('/:uploadId', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
-    const job = await ImportJob.findOne({ uploadId }).lean();
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email) }).lean();
     if (!job) return res.status(404).json({ message: 'Import not found' });
     res.json({ job });
   } catch (error) {
@@ -40,7 +45,7 @@ router.get('/:uploadId', async (req, res) => {
   }
 });
 
-router.patch('/:uploadId/mapping', async (req, res) => {
+router.patch('/:uploadId/mapping', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
     const { mapping } = req.body;
@@ -49,8 +54,8 @@ router.patch('/:uploadId/mapping', async (req, res) => {
       return res.status(400).json({ message: 'Mapping payload is required' });
     }
 
-    const job = await ImportJob.findOneAndUpdate(
-      { uploadId },
+        const job = await ImportJob.findOneAndUpdate(
+      { uploadId, ...createJobFilter(req.user?.email) },
       { mapping, updatedAt: new Date() },
       { new: true }
     ).lean();
@@ -91,10 +96,10 @@ const applyMapping = (row: Record<string, unknown>, mapping: Record<string, Mapp
   return { output, errors };
 };
 
-router.post('/:uploadId/transform', async (req, res) => {
+router.post('/:uploadId/transform', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
-    const job = await ImportJob.findOne({ uploadId }).lean();
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email) }).lean();
     if (!job) return res.status(404).json({ message: 'Import not found' });
     if (!job.mapping || !Object.keys(job.mapping).length) {
       return res.status(400).json({ message: 'Mapping must be saved before transformation' });
@@ -125,7 +130,7 @@ router.post('/:uploadId/transform', async (req, res) => {
       );
     }
 
-    await ImportJob.findOneAndUpdate({ uploadId }, { transformedAt: new Date() });
+    await ImportJob.findOneAndUpdate({ uploadId, ...createJobFilter(req.user?.email) }, { transformedAt: new Date() });
 
     res.json({
       message: 'Transformation complete',

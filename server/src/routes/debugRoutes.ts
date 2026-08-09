@@ -1,14 +1,15 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import UploadRow from '../models/UploadRow';
-import { requireAuth } from '../middleware/authMiddleware';
+import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 
 const router = Router();
 router.use(requireAuth);
 
-router.get('/upload-rows', async (req, res) => {
+router.get('/upload-rows', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.query;
-    const filter: any = {};
+    const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
+    const filter: any = owners.length ? { createdBy: { $in: owners } } : {};
 
     if (typeof uploadId === 'string' && uploadId.trim().length > 0) {
       filter.uploadId = uploadId;

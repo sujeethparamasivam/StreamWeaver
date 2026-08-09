@@ -34,12 +34,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = async (email: string, password: string) => {
     const response = await axios.post('/api/auth/login', { email, password });
     localStorage.setItem('streamweaver-token', response.data.token);
+    axios.defaults.headers.common.Authorization = `Bearer ${response.data.token}`;
     setUser(response.data.user);
   };
 
   const register = async (name: string, email: string, password: string) => {
     const response = await axios.post('/api/auth/register', { name, email, password });
     localStorage.setItem('streamweaver-token', response.data.token);
+    axios.defaults.headers.common.Authorization = `Bearer ${response.data.token}`;
     setUser(response.data.user);
   };
 
