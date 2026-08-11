@@ -36,11 +36,18 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
 
     const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
     const filter: any = { uploadId, createdBy: { $in: owners } };
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }).lean();
+    if (!job) return res.status(404).json({ message: 'Import job not found' });
+
     const docs = await UploadRow.find(filter).sort({ rowNumber: 1 }).lean();
     if (!docs.length) return res.status(404).json({ message: 'No uploaded rows found for this import' });
 
-    const columnNames = Array.from(new Set(docs.flatMap((doc) => Object.keys(doc.data ?? {}))));
-    const columns: MissingColumnSummary[] = columnNames.map((column) => {
+    const allColumnNames = Array.from(new Set(docs.flatMap((doc) => Object.keys(doc.data ?? {}))));
+    const selectedColumnNames = Array.isArray(job.selectedColumns) && job.selectedColumns.length
+      ? job.selectedColumns.filter((column) => allColumnNames.includes(column))
+      : allColumnNames;
+
+    const columns: MissingColumnSummary[] = selectedColumnNames.map((column) => {
       const values = docs.map((doc) => doc.data?.[column]);
       const parsed = values.map((value) => parseValue(value));
       const missingValues = parsed.filter((value) => isMissingValue(value)).length;
@@ -74,7 +81,7 @@ router.post('/', async (req: AuthedRequest, res: Response) => {
 
     const values = docs.map((doc) => parseValue(doc.data?.[column]));
     const stats = getColumnStats(values);
-    const replacement = strategy === 'fill' ? normalizeReplacement(fillValue, stats.type) : strategy === 'mean' ? stats.mean : strategy === 'median' ? stats.median : strategy === 'mode' ? stats.mode : null;
+    const replacement: any = strategy === 'fill' ? normalizeReplacement(fillValue, stats.type) : strategy === 'mean' ? stats.mean : strategy === 'median' ? stats.median : strategy === 'mode' ? stats.mode : null;
 
     if (strategy === 'remove') {
       await UploadRow.deleteMany({ uploadId, createdBy: { $in: owners }, $expr: { $eq: [{ $ifNull: [`$data.${column}`, null] }, null] } });
@@ -86,11 +93,13 @@ router.post('/', async (req: AuthedRequest, res: Response) => {
       for (const row of rows) {
         const current = parseValue(row.data?.[column]);
         if (isMissingValue(current)) {
-          row.data[column] = replacement;
-          await UploadRow.updateOne({ _id: row._id }, { data: row.data });
+          const updateObj: any = {};
+          updateObj[`data.${column}`] = replacement ?? null;
+          await UploadRow.updateOne({ _id: row._id }, { $set: updateObj });
         }
       }
     }
+
 
     await ImportJob.findOneAndUpdate({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }, { updatedAt: new Date() });
     res.json({ message: 'Missing data strategy applied' });

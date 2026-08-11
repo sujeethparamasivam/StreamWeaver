@@ -3,78 +3,10 @@ import { Info } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
-type MappingEntry = { source: string; transformCode?: string };
-type MappingState = Record<string, MappingEntry>;
-
-const DEFAULT_MAPPING: MappingState = {
-  userId: { source: '' },
-  fullName: { source: '' },
-  emailAddress: { source: '' },
-  signupDate: { source: '' }
-};
-
-const guessSourceField = (previewFields: string[], candidates: string[]) => {
-  const normalized = previewFields.map((field) => field.toLowerCase());
-  return candidates.find((candidate) => normalized.includes(candidate.toLowerCase())) ?? '';
-};
-
-const inferMappingFromPreview = (previewFields: string[]): MappingState => {
-  if (!previewFields.length) return DEFAULT_MAPPING;
-
-  return {
-    userId: { source: guessSourceField(previewFields, ['userId', 'userid', 'id', 'user_id']) || '' },
-    fullName: {
-      source:
-        guessSourceField(previewFields, ['fullName', 'fullname', 'name', 'full_name', 'first_name', 'firstName']) || ''
-    },
-    emailAddress: {
-      source: guessSourceField(previewFields, ['email', 'emailAddress', 'email_address']) || ''
-    },
-    signupDate: {
-      source: guessSourceField(previewFields, ['created_at', 'createdAt', 'signupDate', 'signup_date']) || ''
-    }
-  };
-};
-
-const normalizeMapping = (raw: unknown): MappingState => {
-  if (!raw || typeof raw !== 'object') return DEFAULT_MAPPING;
-  const entries = Object.entries(raw as Record<string, unknown>);
-  if (!entries.length) return DEFAULT_MAPPING;
-
-  return entries.reduce<MappingState>((acc, [dest, value]) => {
-    if (typeof value === 'string') {
-      acc[dest] = { source: value };
-    } else if (value && typeof value === 'object' && 'source' in value) {
-      acc[dest] = value as MappingEntry;
-    }
-    return acc;
-  }, {});
-};
-
-const FIELD_CANDIDATES: Record<string, string[]> = {
-  userId: ['userId', 'userid', 'id', 'user_id'],
-  fullName: ['fullName', 'fullname', 'name', 'full_name', 'first_name', 'firstName'],
-  emailAddress: ['email', 'emailAddress', 'email_address', 'email_address'],
-  signupDate: ['created_at', 'createdAt', 'signupDate', 'signup_date', 'created_on', 'createdAt']
-};
-
-const resolveMappingSources = (mapping: MappingState, previewFields: string[]): MappingState => {
-  const normalizedPreview = previewFields.map((field) => field.toLowerCase());
-
-  return Object.entries(mapping).reduce<MappingState>((acc, [dest, entry]) => {
-    const currentSource = entry.source?.trim() ?? '';
-    const hasSourceInPreview = currentSource && normalizedPreview.includes(currentSource.toLowerCase());
-
-    if (hasSourceInPreview) {
-      acc[dest] = entry;
-      return acc;
-    }
-
-    const candidates = FIELD_CANDIDATES[dest] ?? previewFields;
-    const fallbackSource = candidates.find((candidate) => normalizedPreview.includes(candidate.toLowerCase()));
-    acc[dest] = { ...entry, source: fallbackSource ?? currentSource };
-    return acc;
-  }, {});
+type MappingRow = {
+  source: string;
+  target: string;
+  transformCode?: string;
 };
 
 interface ImportJobSummary {
@@ -85,20 +17,94 @@ interface ImportJobSummary {
   failedRows: number;
   createdAt?: string;
   columns?: string[];
+  selectedColumns?: string[];
 }
+
+const buildMappingRows = (mapping: unknown, sourceColumns: string[]): MappingRow[] => {
+  const rowsBySource = new Map<string, MappingRow>();
+
+  if (Array.isArray(mapping)) {
+    for (const item of mapping) {
+      if (!item || typeof item !== 'object') continue;
+      const source = (item as any).source;
+      const target = (item as any).dest ?? (item as any).target;
+      if (typeof source !== 'string' || typeof target !== 'string' || !target.trim()) continue;
+      rowsBySource.set(source, {
+        source,
+        target,
+        transformCode: typeof (item as any).transformCode === 'string' ? (item as any).transformCode : undefined
+      });
+    }
+  } else if (mapping && typeof mapping === 'object') {
+    for (const [dest, value] of Object.entries(mapping as Record<string, unknown>)) {
+      if (!dest.trim()) continue;
+      if (typeof value === 'string') {
+        rowsBySource.set(value, { source: value, target: dest, transformCode: undefined });
+      } else if (value && typeof value === 'object' && typeof (value as any).source === 'string') {
+        rowsBySource.set((value as any).source, {
+          source: (value as any).source,
+          target: dest,
+          transformCode: typeof (value as any).transformCode === 'string' ? (value as any).transformCode : undefined
+        });
+      }
+    }
+  }
+
+  const rows = sourceColumns.map((source) => rowsBySource.get(source) ?? { source, target: '', transformCode: undefined });
+  for (const row of rowsBySource.values()) {
+    if (!sourceColumns.includes(row.source)) {
+      rows.push(row);
+    }
+  }
+
+  return rows;
+};
+
+const normalizeMapping = (raw: unknown): Record<string, { source: string; transformCode?: string }> => {
+  const mapping: Record<string, { source: string; transformCode?: string }> = {};
+
+  if (!raw || typeof raw !== 'object') return mapping;
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const source = (item as any).source;
+      const target = (item as any).dest ?? (item as any).target;
+      if (typeof source !== 'string' || !source.trim() || typeof target !== 'string' || !target.trim()) continue;
+      mapping[target.trim()] = {
+        source: source.trim(),
+        transformCode: typeof (item as any).transformCode === 'string' ? (item as any).transformCode : undefined
+      };
+    }
+  } else {
+    for (const [dest, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!dest.trim()) continue;
+      if (typeof value === 'string') {
+        mapping[dest.trim()] = { source: value.trim() };
+      } else if (value && typeof value === 'object' && typeof (value as any).source === 'string') {
+        mapping[dest.trim()] = {
+          source: (value as any).source.trim(),
+          transformCode: typeof (value as any).transformCode === 'string' ? (value as any).transformCode : undefined
+        };
+      }
+    }
+  }
+
+  return mapping;
+};
 
 const MappingPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [preview, setPreview] = useState<Array<Record<string, unknown>>>([]);
-  const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [sourceColumns, setSourceColumns] = useState<string[]>([]);
+  const [mappingRows, setMappingRows] = useState<MappingRow[]>([]);
   const [importJobs, setImportJobs] = useState<ImportJobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploadId, setUploadId] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [mapping, setMapping] = useState<MappingState>(DEFAULT_MAPPING);
 
   useEffect(() => {
     const loadImportJobs = async () => {
@@ -106,7 +112,7 @@ const MappingPage = () => {
         const response = await api.get('/imports');
         setImportJobs(response.data.jobs ?? []);
       } catch {
-        // Ignore; dataset loading can still function for selected uploadId if provided
+        // Ignore import history failures.
       }
     };
 
@@ -120,8 +126,8 @@ const MappingPage = () => {
 
       if (!idFromQuery) {
         setPreview([]);
-        setAvailableColumns([]);
-        setMapping(DEFAULT_MAPPING);
+        setSourceColumns([]);
+        setMappingRows([]);
         setError('');
         setLoading(false);
         return;
@@ -131,21 +137,20 @@ const MappingPage = () => {
       setLoading(true);
 
       try {
-        const previewPromise = api.get('/debug/upload-rows', { params: { uploadId: idFromQuery } });
-        const mappingPromise = api.get(`/imports/${idFromQuery}`);
+        const [previewResponse, mappingResponse] = await Promise.all([
+          api.get('/debug/upload-rows', { params: { uploadId: idFromQuery } }),
+          api.get(`/imports/${idFromQuery}`)
+        ]);
 
-        const [previewResponse, mappingResponse] = await Promise.all([previewPromise, mappingPromise]);
-        const uploadedPreview = (previewResponse.data.rows ?? []).map((r: { data: Record<string, unknown> }) => r.data ?? r);
+        const uploadedPreview = (previewResponse.data.rows ?? []).map((row: { data: Record<string, unknown> }) => row.data ?? row);
         setPreview(uploadedPreview);
 
-        // Prefer the server-detected columns stored on the ImportJob (strongest source).
-        // Fallback to debug route columns, then derive from preview rows.
         const jobColumns = mappingResponse.data.job?.columns as string[] | undefined;
         const selectedColumnsFromJob = mappingResponse.data.job?.selectedColumns as string[] | undefined;
         const debugColumns = previewResponse.data.columns as string[] | undefined;
         const derivedColumns: string[] = Array.from(new Set(uploadedPreview.flatMap(Object.keys)));
 
-        const chosenColumns: string[] = selectedColumnsFromJob && selectedColumnsFromJob.length
+        const chosenColumns = selectedColumnsFromJob && selectedColumnsFromJob.length
           ? selectedColumnsFromJob
           : jobColumns && jobColumns.length
             ? jobColumns
@@ -153,23 +158,15 @@ const MappingPage = () => {
               ? debugColumns
               : derivedColumns;
 
-        setAvailableColumns(chosenColumns);
-        if (selectedColumnsFromJob && selectedColumnsFromJob.length) {
-          setAvailableColumns(selectedColumnsFromJob);
-        }
+        setSourceColumns(chosenColumns);
 
         const mappingFromJob = mappingResponse.data.job?.mapping;
-        const previewFields: string[] = derivedColumns;
-
-        if (mappingFromJob && Object.keys(mappingFromJob).length) {
-          setMapping(resolveMappingSources(normalizeMapping(mappingFromJob), previewFields));
-        } else {
-          setMapping(inferMappingFromPreview(previewFields));
-        }
+        const rows = buildMappingRows(mappingFromJob, chosenColumns);
+        setMappingRows(rows);
       } catch (err) {
         setPreview([]);
-        setAvailableColumns([]);
-        setMapping(DEFAULT_MAPPING);
+        setSourceColumns([]);
+        setMappingRows([]);
         setError('Unable to load import mapping data.');
       } finally {
         setLoading(false);
@@ -179,33 +176,21 @@ const MappingPage = () => {
     void loadImportData();
   }, [searchParams]);
 
-  const sourceFields = useMemo(() => {
-    if (availableColumns.length) {
-      return Array.from(new Set([...availableColumns, ...Object.values(mapping).map((entry) => entry.source).filter(Boolean)]));
-    }
-    const previewFields = preview.flatMap((row) => Object.keys(row));
-    const mappingFields = Object.values(mapping).map((entry) => entry.source).filter(Boolean);
-    return Array.from(new Set([...previewFields, ...mappingFields]));
-  }, [preview, mapping, availableColumns]);
-
+  const availableSourceFields = useMemo(() => sourceColumns.length ? sourceColumns : Array.from(new Set(preview.flatMap(Object.keys))), [preview, sourceColumns]);
   const sampleRow = preview[0] ?? {};
-
-  const transformedSample = useMemo(() => {
-    const row: Record<string, unknown> = {};
-    Object.entries(mapping).forEach(([dest, entry]) => {
-      row[dest] = sampleRow[entry.source] ?? '';
+  const mappedValues = useMemo(() => {
+    const values: Record<string, unknown> = {};
+    mappingRows.forEach(({ source, target }) => {
+      if (!target.trim()) return;
+      values[target.trim()] = sampleRow[source] ?? '';
     });
-    return row;
-  }, [mapping, sampleRow]);
+    return values;
+  }, [mappingRows, sampleRow]);
 
-  const handleSourceChange = (destField: string, source: string) => {
+  const updateMappingRow = (index: number, changes: Partial<MappingRow>) => {
     setSaveMessage('');
-    setMapping((current) => ({ ...current, [destField]: { ...current[destField], source } }));
-  };
-
-  const handleTransformCodeChange = (destField: string, transformCode: string) => {
-    setSaveMessage('');
-    setMapping((current) => ({ ...current, [destField]: { ...current[destField], transformCode } }));
+    setError('');
+    setMappingRows((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...changes } : row)));
   };
 
   const saveMapping = async () => {
@@ -214,14 +199,28 @@ const MappingPage = () => {
       return;
     }
 
+    const payload = mappingRows.reduce<Record<string, { source: string; transformCode?: string }>>((acc, row) => {
+      if (!row.target.trim()) return acc;
+      acc[row.target.trim()] = {
+        source: row.source,
+        transformCode: row.transformCode?.trim() || undefined
+      };
+      return acc;
+    }, {});
+
+    if (!Object.keys(payload).length) {
+      setError('Map at least one selected column to a target field before saving.');
+      return;
+    }
+
     setSaving(true);
     setSaveMessage('');
     setError('');
 
     try {
-      await api.patch(`/imports/${uploadId}/mapping`, { mapping });
+      await api.patch(`/imports/${uploadId}/mapping`, { mapping: payload });
       setSaveMessage('Mapping saved successfully.');
-    } catch (err) {
+    } catch {
       setError('Unable to save mapping.');
     } finally {
       setSaving(false);
@@ -234,11 +233,26 @@ const MappingPage = () => {
       return;
     }
 
+    const payload = mappingRows.reduce<Record<string, { source: string; transformCode?: string }>>((acc, row) => {
+      if (!row.target.trim()) return acc;
+      acc[row.target.trim()] = {
+        source: row.source,
+        transformCode: row.transformCode?.trim() || undefined
+      };
+      return acc;
+    }, {});
+
+    if (!Object.keys(payload).length) {
+      setError('Map at least one selected column to a target field before transforming.');
+      return;
+    }
+
     setSaving(true);
     setSaveMessage('');
     setError('');
 
     try {
+      await api.patch(`/imports/${uploadId}/mapping`, { mapping: payload });
       const response = await api.post(`/imports/${uploadId}/transform`);
       const sandboxErrors = response.data.sandboxErrors ?? [];
       setSaveMessage(
@@ -247,14 +261,12 @@ const MappingPage = () => {
           : 'Transformation complete. Preview is ready.'
       );
       navigate('/preview');
-    } catch (err) {
+    } catch {
       setError('Unable to run transformation.');
     } finally {
       setSaving(false);
     }
   };
-
-  const selectedJob = importJobs.find((job) => job.uploadId === uploadId);
 
   return (
     <div className="space-y-8">
@@ -264,10 +276,10 @@ const MappingPage = () => {
             <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Mapping Studio</p>
             <h1 className="mt-3 text-4xl font-semibold text-white">Define mappings with precision and enterprise control.</h1>
             <p className="mt-4 text-slate-400">
-              Map source fields to target schema, preview transformed values, and apply secure server-side transformations before import.
+              Map selected source columns to your target schema and preview transformed output before final import.
             </p>
           </div>
-          <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">Big company data modeling experience</div>
+          <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">Dataset-driven source fields</div>
         </div>
 
         <div className="mt-8 rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
@@ -304,72 +316,52 @@ const MappingPage = () => {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Current mapping rules</p>
-                <p className="mt-2 text-slate-300">Customize source-to-target field mappings and add transform logic per destination field.</p>
+                <p className="mt-2 text-slate-300">Use selected source columns from your uploaded dataset as the source side for mapping.</p>
               </div>
-              <div className="rounded-full bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">Auto-save ready</div>
+              <div className="rounded-full bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">Detected source columns: {availableSourceFields.length}</div>
             </div>
 
-            <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-5 text-sm text-slate-200">
-              <div className="flex items-center gap-2">
-                <p className="font-medium text-white">Available source columns</p>
-                <span className="flex items-center text-slate-400" title="Columns are detected from the dataset you uploaded. Only datasets you uploaded are listed here."> 
-                  <Info size={14} />
-                </span>
-              </div>
-              <p className="mt-1 text-slate-400">Select from the detected dataset fields in the dropdowns below.</p>
-              <div className="mt-4">
-                {sourceFields.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {sourceFields.map((field) => (
-                      <span key={field} className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-2 text-xs uppercase tracking-[0.18em] text-slate-300">
-                        {field}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-400">No columns detected in this dataset.</p>
-                )}
-              </div>
-            </div>
 
-            <div className="mt-6 space-y-4">
-              {Object.keys(mapping).map((destField) => (
-                <div key={destField} className="space-y-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-sm text-slate-200">
-                  <div className="grid gap-3 sm:grid-cols-[1fr_1.6fr] sm:items-center">
-                    <div className="font-medium text-white">{destField}</div>
-                    <select
-                      value={mapping[destField]?.source ?? ''}
-                      onChange={(event) => handleSourceChange(destField, event.target.value)}
-                      className="rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                    >
-                      <option value="">Select source field</option>
-                      {sourceFields.map((field) => (
-                        <option key={field} value={field}>{field}</option>
-                      ))}
-                    </select>
+            {availableSourceFields.length ? (
+              <div className="mt-6 space-y-4">
+                {availableSourceFields.map((sourceColumn, index) => (
+                  <div key={`${sourceColumn}-${index}`} className="space-y-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-sm text-slate-200">
+                    <div className="grid gap-3 sm:grid-cols-[1fr_1.6fr] sm:items-center">
+                      <div className="font-medium text-white">{sourceColumn}</div>
+                      <input
+                        value={mappingRows[index]?.target ?? ''}
+                        onChange={(event) => updateMappingRow(index, { target: event.target.value })}
+                        placeholder="Target field name"
+                        className="rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                      />
+                    </div>
+                    <textarea
+                      value={mappingRows[index]?.transformCode ?? ''}
+                      onChange={(event) => updateMappingRow(index, { transformCode: event.target.value })}
+                      placeholder="Optional: custom JS transform, e.g. return value.toUpperCase();"
+                      rows={3}
+                      className="w-full rounded-3xl border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-cyan-100 outline-none transition focus:border-cyan-400"
+                    />
                   </div>
-                  <textarea
-                    value={mapping[destField]?.transformCode ?? ''}
-                    onChange={(event) => handleTransformCodeChange(destField, event.target.value)}
-                    placeholder="Optional: custom JS transform, e.g. return value.toUpperCase();"
-                    rows={3}
-                    className="w-full rounded-3xl border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-cyan-100 outline-none transition focus:border-cyan-400"
-                  />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-6 rounded-[24px] border border-white/10 bg-slate-950/80 p-5 text-slate-400">
+                No dataset columns were detected. Upload a valid CSV and select columns first.
+              </div>
+            )}
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <button
                 onClick={saveMapping}
-                disabled={saving}
+                disabled={saving || !availableSourceFields.length}
                 className="rounded-full bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Saving…' : 'Save mapping'}
               </button>
               <button
                 onClick={runTransform}
-                disabled={saving}
+                disabled={saving || !availableSourceFields.length}
                 className="rounded-full border border-white/10 bg-slate-900 px-5 py-3 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Processing…' : 'Run transformation'}
@@ -388,7 +380,7 @@ const MappingPage = () => {
             <p className="text-sm uppercase tracking-[0.35em] text-slate-300">Transformation preview</p>
             <p className="mt-3 text-slate-400">See the first destination values before applying the mapping to your full dataset.</p>
             <div className="mt-6 space-y-4">
-              {Object.entries(transformedSample).map(([field, value]) => (
+              {Object.entries(mappedValues).map(([field, value]) => (
                 <div key={field} className="rounded-3xl border border-white/10 bg-slate-950/70 p-4 text-sm text-slate-200">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{field}</p>

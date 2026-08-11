@@ -116,6 +116,8 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
     totalRows: 0,
     failedRows: 0,
     fileSize,
+    columns: [],
+    selectedColumns: [],
     createdBy: owner,
     startedAt: new Date()
   });
@@ -160,6 +162,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
       failedRows,
       fileSize,
       columns,
+      selectedColumns: columns,
       finishedAt: new Date()
     });
 

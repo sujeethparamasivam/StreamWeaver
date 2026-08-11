@@ -15,6 +15,31 @@ const createJobFilter = (userEmail?: string, userId?: string) => {
   return owners.length ? { createdBy: { $in: owners } } : {};
 };
 
+const normalizeMapping = (raw: unknown): Record<string, MappingEntry> => {
+  if (!raw || typeof raw !== 'object') return {};
+
+  if (Array.isArray(raw)) {
+    return raw.reduce<Record<string, MappingEntry>>((acc, item) => {
+      if (item && typeof item === 'object' && 'source' in item && typeof item.source === 'string' && typeof item.dest === 'string' && item.dest.trim()) {
+        acc[item.dest] = { source: item.source, transformCode: typeof item.transformCode === 'string' ? item.transformCode : undefined };
+      }
+      return acc;
+    }, {});
+  }
+
+  return Object.entries(raw as Record<string, unknown>).reduce<Record<string, MappingEntry>>((acc, [dest, value]) => {
+    if (typeof value === 'string') {
+      acc[dest] = value;
+    } else if (value && typeof value === 'object' && 'source' in value && typeof (value as any).source === 'string') {
+      acc[dest] = {
+        source: (value as any).source,
+        transformCode: typeof (value as any).transformCode === 'string' ? (value as any).transformCode : undefined
+      };
+    }
+    return acc;
+  }, {});
+};
+
 router.get('/', async (req: AuthedRequest, res: Response) => {
   try {
     const jobs = await ImportJob.find(createJobFilter(req.user?.email, req.user?.id)).sort({ createdAt: -1 }).limit(50).lean();
@@ -54,9 +79,11 @@ router.patch('/:uploadId/mapping', async (req: AuthedRequest, res: Response) => 
       return res.status(400).json({ message: 'Mapping payload is required' });
     }
 
+    const normalizedMapping = normalizeMapping(mapping);
+
     const job = await ImportJob.findOneAndUpdate(
       { uploadId, ...createJobFilter(req.user?.email, req.user?.id) },
-      { mapping, updatedAt: new Date() },
+      { mapping: normalizedMapping, updatedAt: new Date() },
       { new: true }
     ).lean();
 
@@ -127,7 +154,7 @@ router.post('/:uploadId/transform', async (req: AuthedRequest, res: Response) =>
       return res.status(400).json({ message: 'Mapping must be saved before transformation' });
     }
 
-    const mapping = job.mapping as Record<string, MappingEntry>;
+    const mapping = normalizeMapping(job.mapping);
     const rows = await UploadRow.find({ uploadId }).sort({ rowNumber: 1 }).lean();
 
     if (!rows.length) {
