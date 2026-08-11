@@ -7,6 +7,7 @@ export interface UploadResult {
   totalRows?: number;
   failedRows?: number;
   preview: Array<Record<string, unknown>>;
+  columns?: string[];
   uploadId: string;
 }
 

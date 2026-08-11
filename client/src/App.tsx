@@ -6,6 +6,7 @@ import AuthPage from './pages/AuthPage';
 import UploadPage from './pages/UploadPage';
 import PreviewPage from './pages/PreviewPage';
 import MappingPage from './pages/MappingPage';
+import CleaningPage from './pages/CleaningPage';
 import ValidationPage from './pages/ValidationPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
@@ -27,6 +28,7 @@ const App = () => {
         <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="upload" element={<UploadPage />} />
+          <Route path="cleaning" element={<CleaningPage />} />
           <Route path="preview" element={<PreviewPage />} />
           <Route path="mapping" element={<MappingPage />} />
           <Route path="validations" element={<ValidationPage />} />

@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 const navItems = [
   { label: 'Dashboard', path: '/dashboard', icon: Home },
   { label: 'Upload Dataset', path: '/upload', icon: Upload },
+  { label: 'Clean Data', path: '/cleaning', icon: FileSearch },
   { label: 'Preview Data', path: '/preview', icon: Database },
   { label: 'Mapping Studio', path: '/mapping', icon: Layers },
   { label: 'Validations', path: '/validations', icon: FileSearch },

@@ -6,6 +6,9 @@ export interface IImportJob extends Document {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   totalRows: number;
   failedRows: number;
+  fileSize?: number;
+  columns?: string[];
+  selectedColumns?: string[];
   mapping?: Record<string, string>;
   transformedAt?: Date;
   createdBy?: string;
@@ -20,6 +23,9 @@ const importJobSchema = new Schema<IImportJob>(
     status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
     totalRows: { type: Number, default: 0 },
     failedRows: { type: Number, default: 0 },
+    fileSize: { type: Number, default: 0 },
+    columns: { type: [String], default: [] },
+    selectedColumns: { type: [String], default: [] },
     mapping: { type: Schema.Types.Mixed, default: {} },
     createdBy: { type: String },
     startedAt: { type: Date },

@@ -141,11 +141,22 @@ const MappingPage = () => {
         // Prefer the server-detected columns stored on the ImportJob (strongest source).
         // Fallback to debug route columns, then derive from preview rows.
         const jobColumns = mappingResponse.data.job?.columns as string[] | undefined;
+        const selectedColumnsFromJob = mappingResponse.data.job?.selectedColumns as string[] | undefined;
         const debugColumns = previewResponse.data.columns as string[] | undefined;
         const derivedColumns: string[] = Array.from(new Set(uploadedPreview.flatMap(Object.keys)));
 
-        const chosenColumns: string[] = (jobColumns && jobColumns.length ? jobColumns : (debugColumns && debugColumns.length ? debugColumns : derivedColumns));
+        const chosenColumns: string[] = selectedColumnsFromJob && selectedColumnsFromJob.length
+          ? selectedColumnsFromJob
+          : jobColumns && jobColumns.length
+            ? jobColumns
+            : debugColumns && debugColumns.length
+              ? debugColumns
+              : derivedColumns;
+
         setAvailableColumns(chosenColumns);
+        if (selectedColumnsFromJob && selectedColumnsFromJob.length) {
+          setAvailableColumns(selectedColumnsFromJob);
+        }
 
         const mappingFromJob = mappingResponse.data.job?.mapping;
         const previewFields: string[] = derivedColumns;

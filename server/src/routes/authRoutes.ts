@@ -6,7 +6,17 @@ import User from '../models/User';
 const router = Router();
 const memoryUsers: Array<{ id: string; name: string; email: string; password: string; role: 'user' | 'admin' }> = [];
 
+const allowedDomains = ['gmail.com', 'kongu.edu'];
+
 const isEmailValid = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+const isEmailAllowed = (email: string) => {
+  if (!isEmailValid(email)) return false;
+  const parts = email.split('@');
+  if (parts.length !== 2) return false;
+  const domain = parts[1].toLowerCase();
+  return allowedDomains.some((d) => domain === d || domain.endsWith('.' + d));
+};
 
 const createToken = (user: { id: string; role: 'user' | 'admin'; email: string }) => {
   return jwt.sign({ id: user.id, role: user.role, email: user.email }, process.env.JWT_SECRET || 'devsecret', { expiresIn: '7d' });
@@ -19,11 +29,8 @@ router.post('/register', async (req, res) => {
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ message: 'Name is required.' });
     }
-    if (!isEmailValid(email)) {
-      return res.status(400).json({ message: 'Invalid email address.' });
-    }
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    if (!isEmailValid(email) || !isEmailAllowed(email) || !password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
     const existing = await User.findOne({ email }).catch(() => null) || memoryUsers.find((user) => user.email === email);
@@ -47,11 +54,8 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!isEmailValid(email)) {
-      return res.status(400).json({ message: 'Invalid email address.' });
-    }
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+    if (!isEmailValid(email) || !isEmailAllowed(email) || !password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
     const userFromDb = await User.findOne({ email }).catch(() => null);

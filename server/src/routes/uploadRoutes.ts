@@ -58,12 +58,13 @@ const writeBatch = async (batch: NumberedRecord[], fileName: string, uploadId: s
   const validationDocs = batch.flatMap(({ rowNumber, data }) =>
     validateRow(data, uploadId, rowNumber).map((doc) => ({ ...doc, createdBy: owner }))
   );
-  if (validationDocs.length) {
-    await ValidationRecord.bulkWrite(
-      validationDocs.map((doc) => ({ insertOne: { document: doc } })),
-      { ordered: false }
-    );
-  }
+
+  const rowWritePromise = UploadRow.bulkWrite(rowOps, { ordered: false });
+  const validationWritePromise = validationDocs.length
+    ? ValidationRecord.bulkWrite(validationDocs.map((doc) => ({ insertOne: { document: doc } })), { ordered: false })
+    : Promise.resolve();
+
+  await Promise.all([rowWritePromise, validationWritePromise]);
 
   return { failedRows: validationDocs.filter((d) => d.severity === 'error').length };
 };
@@ -85,6 +86,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
   let totalRows = 0;
   let failedRows = 0;
   const firstRecords: Record<string, unknown>[] = [];
+  const detectedColumns = new Set<string>();
   const startedAt = Date.now();
   let lastEmit = 0;
 
@@ -113,6 +115,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
     status: 'processing',
     totalRows: 0,
     failedRows: 0,
+    fileSize,
     createdBy: owner,
     startedAt: new Date()
   });
@@ -144,19 +147,23 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
       totalRows += batch.length;
       failedRows += result.failedRows;
       if (firstRecords.length < 20) firstRecords.push(...batch.slice(0, 20 - firstRecords.length).map((r) => r.data));
+      batch.forEach(({ data }) => Object.keys(data).forEach((key) => detectedColumns.add(key)));
       emitProgress(fileSize);
     }
 
     emitProgress(fileSize, true);
 
+    const columns = Array.from(detectedColumns);
     await ImportJob.findByIdAndUpdate(job._id, {
       status: 'completed',
       totalRows,
       failedRows,
+      fileSize,
+      columns,
       finishedAt: new Date()
     });
 
-    res.json({ message: 'File processed', fileName, total: totalRows, totalRows, failedRows, preview: firstRecords, uploadId });
+    res.json({ message: 'File processed', fileName, total: totalRows, totalRows, failedRows, preview: firstRecords, columns, uploadId });
   } catch (error) {
     await ImportJob.findByIdAndUpdate(job._id, { status: 'failed', totalRows, failedRows, finishedAt: new Date() });
     if (io) io.to(uploadId).emit('import-progress', { uploadId, progress: 100, rowsProcessed: totalRows, rowsFailed: failedRows, error: String(error) });

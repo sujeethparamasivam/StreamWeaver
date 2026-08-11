@@ -3,8 +3,14 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
+const allowedDomains = ['gmail.com', 'kongu.edu'];
+
 const isEmailValid = (value: string) => {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return false;
+  const parts = value.split('@');
+  if (parts.length !== 2) return false;
+  const domain = parts[1].toLowerCase();
+  return allowedDomains.some((d) => domain === d || domain.endsWith('.' + d));
 };
 
 const AuthPage = () => {
@@ -19,13 +25,8 @@ const AuthPage = () => {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!isEmailValid(email)) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (!isEmailValid(email) || password.length < 6) {
+      setError('Invalid email or password.');
       return;
     }
 
