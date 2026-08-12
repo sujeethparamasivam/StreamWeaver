@@ -349,23 +349,54 @@ const UploadPage = () => {
           </div>
 
           <aside className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
-            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Upload intelligence</p>
-            <h2 className="mt-3 text-2xl font-semibold text-white">Premium ingestion controls</h2>
-            <p className="mt-4 text-slate-400">Keep your enterprise pipeline transparent, efficient, and resilient with advanced monitoring and secure staging.</p>
-            <div className="mt-6 space-y-4 text-sm text-slate-300">
-              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
-                <p className="font-semibold text-white">Instant preview</p>
-                <p className="mt-2 text-slate-400">See the first rows immediately after upload so mapping can start without delay.</p>
+            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Upload summary</p>
+            <h2 className="mt-3 text-2xl font-semibold text-white">Dataset metrics</h2>
+            <p className="mt-4 text-slate-400">Review the key statistics for your uploaded file before moving on to mapping.</p>
+
+            {profile ? (
+              <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
+                <table className="min-w-full divide-y divide-white/10 text-sm text-slate-200">
+                  <tbody>
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Rows</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.totalRows.toLocaleString()}</td>
+                    </tr>
+                    <tr className="border-b border-white/10 bg-slate-900/80">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Columns</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.totalColumns}</td>
+                    </tr>
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Missing values</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.totalMissingValues.toLocaleString()}</td>
+                    </tr>
+                    <tr className="border-b border-white/10 bg-slate-900/80">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Duplicates</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.totalDuplicateRows.toLocaleString()}</td>
+                    </tr>
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Numeric columns</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.numberNumericColumns}</td>
+                    </tr>
+                    <tr className="border-b border-white/10 bg-slate-900/80">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Text columns</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.numberTextColumns}</td>
+                    </tr>
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Date columns</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.numberDateColumns}</td>
+                    </tr>
+                    <tr className="bg-slate-900/80">
+                      <th className="px-4 py-3 text-left font-medium text-slate-300">Quality score</th>
+                      <td className="px-4 py-3 text-right text-white">{profile.qualityScore}%</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
-                <p className="font-semibold text-white">Streamed processing</p>
-                <p className="mt-2 text-slate-400">Large files are streamed end-to-end, avoiding memory issues and keeping UI latency low.</p>
+            ) : (
+              <div className="mt-6 rounded-[24px] border border-white/10 bg-slate-950/70 p-6 text-sm text-slate-300">
+                Upload a file to see dataset metrics and a preview of the first rows here.
               </div>
-              <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-4">
-                <p className="font-semibold text-white">Secure staging</p>
-                <p className="mt-2 text-slate-400">Files are handled safely before transformation and can be routed to your secure storage layer.</p>
-              </div>
-            </div>
+            )}
 
             {preview.length > 0 && (
               <div className="mt-8 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/80">
