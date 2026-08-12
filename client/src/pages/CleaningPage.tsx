@@ -4,10 +4,20 @@ import api from '../services/api';
 
 type MissingColumnSummary = {
   name: string;
+  totalRows: number;
   missingValues: number;
   missingPercentage: number;
+  completeCount: number;
   type: 'number' | 'date' | 'string' | 'boolean' | 'unknown';
   sampleValues: unknown[];
+};
+
+type MissingDataSummary = {
+  totalRows: number;
+  rowsWithMissingData: number;
+  completeRows: number;
+  totalMissingValues: number;
+  missingPercentage: number;
 };
 
 type StrategyChoice = 'keep' | 'remove' | 'fill' | 'mean' | 'median' | 'mode';
@@ -41,6 +51,7 @@ const CleaningPage = () => {
   const navigate = useNavigate();
   const [uploadId, setUploadId] = useState('');
   const [columns, setColumns] = useState<MissingColumnSummary[]>([]);
+  const [summary, setSummary] = useState<MissingDataSummary | null>(null);
   const [strategies, setStrategies] = useState<Record<string, ColumnStrategy>>({});
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState<string>('');
@@ -82,7 +93,9 @@ const CleaningPage = () => {
       try {
         const response = await api.get('/cleaning', { params: { uploadId } });
         const fetchedColumns: MissingColumnSummary[] = response.data.columns ?? [];
+        const fetchedSummary: MissingDataSummary | null = response.data.summary ?? null;
         setColumns(fetchedColumns);
+        setSummary(fetchedSummary);
 
         const initialStrategies = fetchedColumns.reduce((acc, column) => {
           acc[column.name] = { strategy: 'keep', fillValue: '' };
@@ -144,7 +157,9 @@ const CleaningPage = () => {
       setMessage(`Applied ${strategyLabels[current.strategy]} to ${column}.`);
       const response = await api.get('/cleaning', { params: { uploadId } });
       const refreshed = response.data.columns ?? [];
+      const refreshedSummary: MissingDataSummary | null = response.data.summary ?? null;
       setColumns(refreshed);
+      setSummary(refreshedSummary);
     } catch (err) {
       setError('Unable to apply the missing data strategy. Please try again.');
     } finally {
@@ -160,13 +175,23 @@ const CleaningPage = () => {
     }
   };
 
-  const summary = useMemo(() => {
-    const totalMissing = columns.reduce((sum, col) => sum + col.missingValues, 0);
+  const missingSummary = useMemo(() => {
+    if (!summary) {
+      return {
+        totalRows: 0,
+        rowsWithMissingData: 0,
+        completeRows: 0,
+        totalMissingValues: 0,
+        missingPercentage: 0,
+        totalColumns: columns.length
+      };
+    }
+
     return {
-      totalColumns: columns.length,
-      totalMissing
+      ...summary,
+      totalColumns: columns.length
     };
-  }, [columns]);
+  }, [summary, columns.length]);
 
   return (
     <div className="space-y-8">
@@ -224,12 +249,26 @@ const CleaningPage = () => {
           <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-lg">
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <p className="text-sm text-slate-400">Columns with missing values</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{summary.totalColumns}</p>
+                <p className="text-sm text-slate-400">Total rows</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{missingSummary.totalRows.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-sm text-slate-400">Total missing entries</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{summary.totalMissing}</p>
+                <p className="text-sm text-slate-400">Rows with missing data</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{missingSummary.rowsWithMissingData.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">Missing data rate</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{missingSummary.missingPercentage.toFixed(2)}%</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-sm text-slate-400">Complete rows</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{missingSummary.completeRows.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">Total missing values</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{missingSummary.totalMissingValues.toLocaleString()}</p>
               </div>
               <div className="flex items-center justify-between rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">
                 <span>Upload ID</span>

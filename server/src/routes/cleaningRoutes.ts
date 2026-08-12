@@ -9,10 +9,20 @@ router.use(requireAuth);
 
 type MissingColumnSummary = {
   name: string;
+  totalRows: number;
   missingValues: number;
   missingPercentage: number;
+  completeCount: number;
   type: 'number' | 'date' | 'string' | 'boolean' | 'unknown';
   sampleValues: unknown[];
+};
+
+type MissingDataSummary = {
+  totalRows: number;
+  rowsWithMissingData: number;
+  completeRows: number;
+  totalMissingValues: number;
+  missingPercentage: number;
 };
 
 type MissingDataRequest = {
@@ -47,20 +57,42 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
       ? job.selectedColumns.filter((column) => allColumnNames.includes(column))
       : allColumnNames;
 
+    const totalRows = docs.length;
+    let rowsWithMissingData = 0;
+    let totalMissingValues = 0;
+
     const columns: MissingColumnSummary[] = selectedColumnNames.map((column) => {
       const values = docs.map((doc) => doc.data?.[column]);
       const parsed = values.map((value) => parseValue(value));
       const missingValues = parsed.filter((value) => isMissingValue(value)).length;
+      totalMissingValues += missingValues;
       return {
         name: column,
+        totalRows,
         missingValues,
         missingPercentage: values.length ? Math.round((missingValues / values.length) * 10000) / 100 : 0,
+        completeCount: values.length - missingValues,
         type: getColumnStats(values).type,
         sampleValues: values.filter((value) => !isMissingValue(value)).slice(0, 3)
       };
-    }).filter((column) => column.missingValues > 0);
+    });
 
-    res.json({ columns });
+    for (const doc of docs) {
+      const rowValues = selectedColumnNames.map((column) => parseValue(doc.data?.[column]));
+      if (rowValues.some((value) => isMissingValue(value))) {
+        rowsWithMissingData += 1;
+      }
+    }
+
+    const summary = {
+      totalRows,
+      rowsWithMissingData,
+      completeRows: totalRows - rowsWithMissingData,
+      totalMissingValues,
+      missingPercentage: totalRows > 0 ? Math.round((rowsWithMissingData / totalRows) * 10000) / 100 : 0
+    };
+
+    res.json({ summary, columns });
   } catch (error) {
     res.status(500).json({ message: 'Unable to load missing data summary', error: String(error) });
   }

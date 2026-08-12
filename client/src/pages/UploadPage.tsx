@@ -374,7 +374,7 @@ const UploadPage = () => {
                     <div key={column}>{column}</div>
                   ))}
                 </div>
-                <List height={260} itemCount={Math.min(preview.length, 6)} itemSize={44} width="100%">
+                <List height={260} itemCount={preview.length} itemSize={44} width="100%">
                   {Row}
                 </List>
               </div>

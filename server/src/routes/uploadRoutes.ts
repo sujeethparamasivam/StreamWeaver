@@ -14,6 +14,7 @@ const router = Router();
 const upload = multer({ dest: 'uploads/' });
 
 const BATCH_SIZE = 1000;
+const PREVIEW_LIMIT = 1000;
 const PROGRESS_THROTTLE_MS = 150;
 
 type NumberedRecord = { rowNumber: number; data: Record<string, unknown> };
@@ -148,7 +149,7 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
       const result = await writeBatch(batch, fileName, uploadId, owner);
       totalRows += batch.length;
       failedRows += result.failedRows;
-      if (firstRecords.length < 20) firstRecords.push(...batch.slice(0, 20 - firstRecords.length).map((r) => r.data));
+      if (firstRecords.length < 1000) firstRecords.push(...batch.slice(0, 1000 - firstRecords.length).map((r) => r.data));
       batch.forEach(({ data }) => Object.keys(data).forEach((key) => detectedColumns.add(key)));
       emitProgress(fileSize);
     }

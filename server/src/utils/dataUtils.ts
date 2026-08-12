@@ -2,14 +2,17 @@ export type DataType = 'number' | 'date' | 'string' | 'boolean' | 'unknown';
 
 export const isMissingValue = (value: unknown) => {
   if (value === null || value === undefined) return true;
+  if (typeof value === 'number') return Number.isNaN(value);
   if (typeof value === 'string' && value.trim().length === 0) return true;
   return false;
 };
 
 export const parseValue = (value: unknown) => {
   if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const text = String(value).trim();
   if (text.length === 0) return null;
+  if (/^nan$/i.test(text)) return null;
   if (/^-?\d+(?:\.\d+)?$/.test(text)) return Number(text);
   const date = Date.parse(text);
   if (!Number.isNaN(date) && text.length >= 6) return new Date(date);

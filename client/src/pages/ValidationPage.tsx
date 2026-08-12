@@ -1,37 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../services/api';
 
 const ValidationPage = () => {
   const [records, setRecords] = useState<Array<{ field: string; message: string; severity: string; rowNumber: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [summary, setSummary] = useState<{ totalRecords: number; totalErrors: number; totalWarnings: number }>({ totalRecords: 0, totalErrors: 0, totalWarnings: 0 });
+  const [pagination, setPagination] = useState<{ page: number; limit: number; totalRecords: number; totalPages: number }>({ page: 1, limit: 100, totalRecords: 0, totalPages: 0 });
+
+  const loadValidations = async (page = 1, limit = 100) => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await api.get('/validations', { params: { page, limit } });
+      setRecords(response.data.records ?? []);
+      setSummary(response.data.summary ?? { totalRecords: 0, totalErrors: 0, totalWarnings: 0 });
+      setPagination(response.data.pagination ?? { page, limit, totalRecords: 0, totalPages: 0 });
+    } catch (err) {
+      setError('Unable to load validation records.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadValidations = async () => {
-      try {
-        const response = await api.get('/validations');
-        setRecords(response.data.records ?? []);
-      } catch (err) {
-        setError('Unable to load validation records.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void loadValidations();
   }, []);
-
-  const totals = useMemo(() => {
-    return records.reduce(
-      (acc, record) => {
-        acc.total += 1;
-        if (record.severity === 'error') acc.errors += 1;
-        else acc.warnings += 1;
-        return acc;
-      },
-      { total: 0, errors: 0, warnings: 0 }
-    );
-  }, [records]);
 
   return (
     <div className="space-y-8">
@@ -53,15 +47,15 @@ const ValidationPage = () => {
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
             <p className="text-sm text-slate-400">Total issues</p>
-            <p className="mt-3 text-4xl font-semibold text-white">{totals.total}</p>
+            <p className="mt-3 text-4xl font-semibold text-white">{summary.totalRecords.toLocaleString()}</p>
           </div>
           <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
             <p className="text-sm text-slate-400">Errors</p>
-            <p className="mt-3 text-4xl font-semibold text-rose-300">{totals.errors}</p>
+            <p className="mt-3 text-4xl font-semibold text-rose-300">{summary.totalErrors.toLocaleString()}</p>
           </div>
           <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
             <p className="text-sm text-slate-400">Warnings</p>
-            <p className="mt-3 text-4xl font-semibold text-amber-300">{totals.warnings}</p>
+            <p className="mt-3 text-4xl font-semibold text-amber-300">{summary.totalWarnings.toLocaleString()}</p>
           </div>
         </div>
       )}
@@ -71,24 +65,52 @@ const ValidationPage = () => {
       )}
 
       {!loading && records.length > 0 && (
-        <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
-          <div className="grid min-w-full grid-cols-[0.9fr_1.6fr_2fr_1fr] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
-            <div>Row</div>
-            <div>Field</div>
-            <div>Message</div>
-            <div>Severity</div>
-          </div>
-          <div className="max-h-[560px] overflow-auto px-4 py-4">
-            {records.map((record, idx) => (
-              <div key={idx} className="grid min-w-full grid-cols-[0.9fr_1.6fr_2fr_1fr] gap-4 border-b border-white/10 py-3 text-sm text-slate-200 last:border-b-0">
-                <div>{record.rowNumber}</div>
-                <div>{record.field}</div>
-                <div>{record.message}</div>
-                <div className={`${record.severity === 'error' ? 'text-rose-300' : 'text-amber-300'}`}>{record.severity}</div>
+        <>
+          <div className="rounded-[28px] border border-white/10 bg-slate-900/80 p-6 shadow-lg">
+            <div className="flex flex-col gap-2 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-slate-400">Showing</p>
+                <p className="mt-1 text-lg font-semibold text-white">{Math.min((pagination.page - 1) * pagination.limit + 1, pagination.totalRecords).toLocaleString()}–{Math.min(pagination.page * pagination.limit, pagination.totalRecords).toLocaleString()} of {pagination.totalRecords.toLocaleString()}</p>
               </div>
-            ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadValidations(Math.max(1, pagination.page - 1), pagination.limit)}
+                  disabled={pagination.page <= 1}
+                  className="rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-900 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadValidations(Math.min(pagination.page + 1, pagination.totalPages), pagination.limit)}
+                  disabled={pagination.page >= pagination.totalPages}
+                  className="rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-900 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+          <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
+            <div className="grid min-w-full grid-cols-[0.9fr_1.6fr_2fr_1fr] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
+              <div>Row</div>
+              <div>Field</div>
+              <div>Message</div>
+              <div>Severity</div>
+            </div>
+            <div className="max-h-[560px] overflow-auto px-4 py-4">
+              {records.map((record, idx) => (
+                <div key={idx} className="grid min-w-full grid-cols-[0.9fr_1.6fr_2fr_1fr] gap-4 border-b border-white/10 py-3 text-sm text-slate-200 last:border-b-0">
+                  <div>{record.rowNumber}</div>
+                  <div>{record.field}</div>
+                  <div>{record.message}</div>
+                  <div className={`${record.severity === 'error' ? 'text-rose-300' : 'text-amber-300'}`}>{record.severity}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
