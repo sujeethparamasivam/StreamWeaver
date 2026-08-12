@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Info } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
@@ -104,6 +103,8 @@ const MappingPage = () => {
   const [error, setError] = useState('');
   const [uploadId, setUploadId] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -176,8 +177,21 @@ const MappingPage = () => {
     void loadImportData();
   }, [searchParams]);
 
+  useEffect(() => {
+    setSearchFilter('');
+    setExpandedRows({});
+  }, [uploadId]);
+
   const availableSourceFields = useMemo(() => sourceColumns.length ? sourceColumns : Array.from(new Set(preview.flatMap(Object.keys))), [preview, sourceColumns]);
   const sampleRow = preview[0] ?? {};
+  const selectedJob = importJobs.find((job) => job.uploadId === uploadId);
+  const oneDatasetAvailable = importJobs.length === 1;
+  const visibleRows = useMemo(
+    () => mappingRows
+      .map((row, rowIndex) => ({ ...row, rowIndex }))
+      .filter((row) => row.source.toLowerCase().includes(searchFilter.toLowerCase())),
+    [mappingRows, searchFilter]
+  );
   const mappedValues = useMemo(() => {
     const values: Record<string, unknown> = {};
     mappingRows.forEach(({ source, target }) => {
@@ -186,6 +200,13 @@ const MappingPage = () => {
     });
     return values;
   }, [mappingRows, sampleRow]);
+
+  const toggleRowExpansion = (source: string) => {
+    setExpandedRows((current) => ({
+      ...current,
+      [source]: !current[source]
+    }));
+  };
 
   const updateMappingRow = (index: number, changes: Partial<MappingRow>) => {
     setSaveMessage('');
@@ -282,23 +303,55 @@ const MappingPage = () => {
           <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">Dataset-driven source fields</div>
         </div>
 
-        <div className="mt-8 rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
-          <label htmlFor="datasetSelect" className="block text-sm font-medium text-slate-300">Select dataset</label>
-          <select
-            id="datasetSelect"
-            value={uploadId}
-            onChange={(event) => navigate(`/mapping?uploadId=${event.target.value}`)}
-            className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-          >
-            <option value="">Choose a dataset</option>
-            {importJobs.map((job) => (
-              <option key={job.uploadId} value={job.uploadId}>
-                {job.fileName} {job.status !== 'completed' ? `(${job.status})` : ''}
-              </option>
-            ))}
-          </select>
-          {!importJobs.length && (
-            <p className="mt-3 text-sm text-slate-400">No uploaded datasets found. Upload a dataset first to begin mapping.</p>
+        <div className="mt-8 grid gap-4 sm:grid-cols-[1.1fr_0.9fr]">
+          {oneDatasetAvailable ? (
+            <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+              <p className="text-sm font-medium text-slate-300">Dataset</p>
+              <p className="mt-2 text-lg font-semibold text-white">{importJobs[0]?.fileName ?? 'Dataset'}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-sm text-slate-300">
+                  <p className="text-slate-400">Columns</p>
+                  <p className="mt-1 font-semibold text-white">{availableSourceFields.length}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-sm text-slate-300">
+                  <p className="text-slate-400">Rows</p>
+                  <p className="mt-1 font-semibold text-white">{importJobs[0]?.totalRows?.toLocaleString() ?? '—'}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-900/80 p-3 text-sm text-slate-300">
+                  <p className="text-slate-400">Status</p>
+                  <p className="mt-1 font-semibold text-white">{importJobs[0]?.status ?? 'unknown'}</p>
+                </div>
+              </div>
+              {!uploadId && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/mapping?uploadId=${importJobs[0]?.uploadId}`)}
+                  className="mt-5 inline-flex items-center rounded-full bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                >
+                  Use this dataset
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
+              <label htmlFor="datasetSelect" className="block text-sm font-medium text-slate-300">Select dataset</label>
+              <select
+                id="datasetSelect"
+                value={uploadId}
+                onChange={(event) => navigate(`/mapping?uploadId=${event.target.value}`)}
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+              >
+                <option value="">Choose a dataset</option>
+                {importJobs.map((job) => (
+                  <option key={job.uploadId} value={job.uploadId}>
+                    {job.fileName} {job.status !== 'completed' ? `(${job.status})` : ''}
+                  </option>
+                ))}
+              </select>
+              {!importJobs.length && (
+                <p className="mt-3 text-sm text-slate-400">No uploaded datasets found. Upload a dataset first to begin mapping.</p>
+              )}
+            </div>
           )}
         </div>
       </section>
@@ -313,55 +366,93 @@ const MappingPage = () => {
       {!loading && !error && uploadId && (
         <div className="grid gap-6 xl:grid-cols-[1.45fr_0.75fr]">
           <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Current mapping rules</p>
                 <p className="mt-2 text-slate-300">Use selected source columns from your uploaded dataset as the source side for mapping.</p>
               </div>
-              <div className="rounded-full bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">Detected source columns: {availableSourceFields.length}</div>
+              <div className="inline-flex rounded-full bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">Detected source columns: {availableSourceFields.length}</div>
             </div>
 
+            <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <label htmlFor="searchFields" className="sr-only">Search fields</label>
+                <input
+                  id="searchFields"
+                  type="search"
+                  value={searchFilter}
+                  onChange={(event) => setSearchFilter(event.target.value)}
+                  placeholder="Search fields..."
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                />
+              </div>
+            </div>
 
-            {availableSourceFields.length ? (
-              <div className="mt-6 space-y-4">
-                {availableSourceFields.map((sourceColumn, index) => (
-                  <div key={`${sourceColumn}-${index}`} className="space-y-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-sm text-slate-200">
-                    <div className="grid gap-3 sm:grid-cols-[1fr_1.6fr] sm:items-center">
-                      <div className="font-medium text-white">{sourceColumn}</div>
-                      <input
-                        value={mappingRows[index]?.target ?? ''}
-                        onChange={(event) => updateMappingRow(index, { target: event.target.value })}
-                        placeholder="Target field name"
-                        className="rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                      />
+            <div className="mt-5 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
+              <div className="hidden grid-cols-[1.5fr_1.4fr_0.9fr] gap-4 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid">
+                <div>Source field</div>
+                <div>Target field</div>
+                <div>Transform</div>
+              </div>
+
+              <div className="max-h-[720px] overflow-y-auto">
+                {visibleRows.length ? visibleRows.map((row) => {
+                  const expanded = expandedRows[row.source];
+                  return (
+                    <div key={`${row.source}-${row.rowIndex}`} className="border-b border-white/10 px-4 py-4 last:border-none">
+                      <div className="grid gap-3 sm:grid-cols-[1.5fr_1.4fr_0.9fr] sm:items-center">
+                        <div>
+                          <div className="font-medium text-white">{row.source}</div>
+                        </div>
+                        <div>
+                          <input
+                            value={row.target}
+                            onChange={(event) => updateMappingRow(row.rowIndex, { target: event.target.value })}
+                            placeholder="Target field name"
+                            className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-3 sm:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => toggleRowExpansion(row.source)}
+                            className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-sm text-slate-100 transition hover:bg-slate-900"
+                          >
+                            {expanded ? 'Hide transform' : 'Advanced'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {expanded && (
+                        <div className="mt-4 sm:col-span-3">
+                          <textarea
+                            value={row.transformCode ?? ''}
+                            onChange={(event) => updateMappingRow(row.rowIndex, { transformCode: event.target.value })}
+                            placeholder="Optional: custom JS transform, e.g. return value.toUpperCase();"
+                            rows={3}
+                            className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 font-mono text-xs text-cyan-100 outline-none transition focus:border-cyan-400"
+                          />
+                        </div>
+                      )}
                     </div>
-                    <textarea
-                      value={mappingRows[index]?.transformCode ?? ''}
-                      onChange={(event) => updateMappingRow(index, { transformCode: event.target.value })}
-                      placeholder="Optional: custom JS transform, e.g. return value.toUpperCase();"
-                      rows={3}
-                      className="w-full rounded-3xl border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-cyan-100 outline-none transition focus:border-cyan-400"
-                    />
-                  </div>
-                ))}
+                  );
+                }) : (
+                  <div className="px-4 py-8 text-center text-sm text-slate-400">No matching source fields found. Adjust your search or update the dataset selection.</div>
+                )}
               </div>
-            ) : (
-              <div className="mt-6 rounded-[24px] border border-white/10 bg-slate-950/80 p-5 text-slate-400">
-                No dataset columns were detected. Upload a valid CSV and select columns first.
-              </div>
-            )}
+            </div>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <button
                 onClick={saveMapping}
-                disabled={saving || !availableSourceFields.length}
+                disabled={saving || !mappingRows.length}
                 className="rounded-full bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Saving…' : 'Save mapping'}
               </button>
               <button
                 onClick={runTransform}
-                disabled={saving || !availableSourceFields.length}
+                disabled={saving || !mappingRows.length}
                 className="rounded-full border border-white/10 bg-slate-900 px-5 py-3 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Processing…' : 'Run transformation'}
@@ -379,17 +470,30 @@ const MappingPage = () => {
           <aside className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
             <p className="text-sm uppercase tracking-[0.35em] text-slate-300">Transformation preview</p>
             <p className="mt-3 text-slate-400">See the first destination values before applying the mapping to your full dataset.</p>
-            <div className="mt-6 space-y-4">
-              {Object.entries(mappedValues).map(([field, value]) => (
-                <div key={field} className="rounded-3xl border border-white/10 bg-slate-950/70 p-4 text-sm text-slate-200">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{field}</p>
-                    <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] uppercase tracking-[0.25em] text-slate-400">preview</span>
-                  </div>
-                  <p className="mt-2 text-base text-white">{String(value ?? '—')}</p>
+            {Object.keys(mappedValues).length ? (
+              <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
+                <div className="grid grid-cols-[1fr_1fr] gap-3 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500">
+                  <div>Source value</div>
+                  <div>Transformed value</div>
                 </div>
-              ))}
-            </div>
+                <div className="divide-y divide-white/10">
+                  {mappingRows.filter((row) => row.target.trim()).map((row) => (
+                    <div key={`${row.source}-preview`} className="grid grid-cols-[1fr_1fr] gap-3 px-4 py-3 text-sm text-slate-200">
+                      <div>
+                        <p className="text-xs text-slate-500">[{row.source}]</p>
+                        <p className="mt-1 truncate">{String(sampleRow[row.source] ?? '—')}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">[{row.target.trim()}]</p>
+                        <p className="mt-1 truncate">{String(mappedValues[row.target.trim()] ?? '—')}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/70 p-6 text-slate-400">No transformations configured yet.</div>
+            )}
           </aside>
         </div>
       )}

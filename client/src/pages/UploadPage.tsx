@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
-import { FixedSizeList as List } from 'react-window';
 import api from '../services/api';
 import uploadFile from '../services/uploadService';
 import { joinRoom, onImportProgress } from '../services/socket';
@@ -11,10 +10,8 @@ const UploadPage = () => {
   const [fileName, setFileName] = useState('');
   const [uploadId, setUploadId] = useState('');
   const [totalRows, setTotalRows] = useState<number | null>(null);
-  const [preview, setPreview] = useState<Array<Record<string, unknown>>>([]);
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
-  const [columnSearch, setColumnSearch] = useState('');
   const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,7 +67,6 @@ const UploadPage = () => {
       setFileName(response.fileName);
       setUploadId(id);
       setTotalRows(response.total ?? response.totalRows ?? null);
-      setPreview(uploadPreview);
       setAvailableColumns(columns);
       setSelectedColumns(columns);
       setProgress(100);
@@ -83,32 +79,6 @@ const UploadPage = () => {
       setLoading(false);
     }
   }, []);
-
-  const toggleColumn = (column: string) => {
-    setSelectedColumns((current) =>
-      current.includes(column) ? current.filter((item) => item !== column) : [...current, column]
-    );
-  };
-
-  const selectAllColumns = () => {
-    setSelectedColumns(availableColumns);
-  };
-
-  const clearAllColumns = () => {
-    setSelectedColumns([]);
-  };
-
-  const saveSelectedColumns = async () => {
-    if (!uploadId) return;
-    setSavingColumns(true);
-    try {
-      await api.patch(`/imports/${uploadId}/columns`, { selectedColumns });
-    } catch {
-      setError('Unable to save selected columns.');
-    } finally {
-      setSavingColumns(false);
-    }
-  };
 
   const continueToMapping = async () => {
     if (!selectedColumns.length) {
@@ -131,23 +101,6 @@ const UploadPage = () => {
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({ onDrop, multiple: false, accept: { 'text/csv': ['.csv'], 'application/json': ['.json'] } });
 
-  const columns = useMemo(() => (preview.length ? Object.keys(preview[0]) : []), [preview]);
-  const filteredColumns = useMemo(
-    () => availableColumns.filter((column) => column.toLowerCase().includes(columnSearch.toLowerCase())),
-    [availableColumns, columnSearch]
-  );
-
-  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const row = preview[index];
-    return (
-      <div style={style} className="grid min-w-full grid-cols-[1.2fr_repeat(3,1fr)] gap-4 border-b border-white/10 px-4 text-sm text-slate-200 items-center">
-        {columns.slice(0, 4).map((column) => (
-          <div key={column} className="truncate">{String(row[column] ?? '')}</div>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -166,7 +119,7 @@ const UploadPage = () => {
           </div>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+        <div className="space-y-6">
           <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
             <div {...getRootProps()} className="min-h-[280px] rounded-[28px] border-2 border-dashed border-cyan-500/30 bg-slate-950/80 p-10 text-center transition hover:border-cyan-400 hover:bg-slate-900">
               <input {...getInputProps()} />
@@ -209,124 +162,72 @@ const UploadPage = () => {
 
             {fileName && !loading && (
               <>
-                <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                  <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
-                    <p className="text-sm text-slate-400">Current file</p>
-                    <p className="mt-3 text-lg font-semibold text-white">{fileName}</p>
+                <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-6">
+                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Dataset summary</p>
+                  <p className="mt-2 text-sm text-slate-300">Key metrics from your uploaded file.</p>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Total rows</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.totalRows?.toLocaleString() ?? totalRows?.toLocaleString() ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Total columns</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.totalColumns ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Missing values</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.totalMissingValues?.toLocaleString() ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Duplicate rows</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.totalDuplicateRows?.toLocaleString() ?? '—'}</p>
+                    </div>
                   </div>
-                  <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
-                    <p className="text-sm text-slate-400">Total rows</p>
-                    <p className="mt-3 text-lg font-semibold text-white">{totalRows ?? '—'}</p>
-                  </div>
-                  <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5">
-                    <p className="text-sm text-slate-400">Preview rows</p>
-                    <p className="mt-3 text-lg font-semibold text-white">{preview.length}</p>
+
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Numeric columns</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.numberNumericColumns ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Text columns</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.numberTextColumns ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Date columns</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.numberDateColumns ?? '—'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Quality score</p>
+                      <p className="mt-3 text-2xl font-semibold text-white">{profile?.qualityScore != null ? `${profile.qualityScore}%` : '—'}</p>
+                    </div>
                   </div>
                 </div>
 
-                {availableColumns.length > 0 && (
-                  <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-6">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Detected columns</p>
-                        <p className="mt-2 text-sm text-slate-300">Select the columns you want to keep in the dataset.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={selectAllColumns} className="rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-white transition hover:bg-slate-800">
-                          Select All
-                        </button>
-                        <button onClick={clearAllColumns} className="rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-white transition hover:bg-slate-800">
-                          Clear All
-                        </button>
-                      </div>
+                <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-6">
+                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Upload status</p>
+                  <p className="mt-2 text-sm text-slate-300">Current file, processing state and progress are tracked in real time.</p>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">File name</p>
+                      <p className="mt-3 text-lg font-semibold text-white truncate">{fileName}</p>
                     </div>
-
-                    <div className="mt-4 grid gap-3">
-                      <input
-                        type="search"
-                        value={columnSearch}
-                        onChange={(e) => setColumnSearch(e.target.value)}
-                        placeholder="Search columns..."
-                        className="w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                      />
-                      <div className="grid gap-2 max-h-72 overflow-auto rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        {filteredColumns.length ? (
-                          filteredColumns.map((column) => {
-                            const isSelected = selectedColumns.includes(column);
-                            return (
-                              <button
-                                key={column}
-                                type="button"
-                                onClick={() => toggleColumn(column)}
-                                className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left transition ${isSelected ? 'bg-cyan-500/20 text-white border border-cyan-500/40' : 'bg-slate-950/70 text-slate-200 border border-white/10 hover:bg-slate-900'}`}
-                              >
-                                <span>{column}</span>
-                                <span>{isSelected ? '☑' : '☐'}</span>
-                              </button>
-                            );
-                          })
-                        ) : (
-                          <p className="text-sm text-slate-500">No columns match your search.</p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between gap-4 rounded-[24px] border border-white/10 bg-slate-950/80 p-4">
-                        <p className="text-sm text-slate-300">Selected: {selectedColumns.length} / {availableColumns.length}</p>
-                        <button
-                          type="button"
-                          onClick={saveSelectedColumns}
-                          disabled={savingColumns}
-                          className="rounded-full bg-cyan-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-50"
-                        >
-                          {savingColumns ? 'Saving...' : 'Save selection'}
-                        </button>
-                      </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Status</p>
+                      <p className="mt-3 text-lg font-semibold text-white">{loading ? 'Processing' : uploadId ? 'Ready' : 'Waiting'}</p>
+                    </div>
+                    <div className="rounded-[24px] bg-slate-900/80 p-4">
+                      <p className="text-sm text-slate-400">Progress</p>
+                      <p className="mt-3 text-lg font-semibold text-white">{progress}%</p>
                     </div>
                   </div>
-                )}
 
-                {profile && (
-                  <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-6">
-                    <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Dataset overview</p>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Rows</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.totalRows}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Columns</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.totalColumns}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Missing values</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.totalMissingValues}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Duplicates</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.totalDuplicateRows}</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Numeric columns</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.numberNumericColumns}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Text columns</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.numberTextColumns}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Date columns</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.numberDateColumns}</p>
-                      </div>
-                      <div className="rounded-[24px] border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">Quality score</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{profile.qualityScore}%</p>
-                      </div>
-                    </div>
+                  <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-900">
+                    <div className="h-full rounded-full bg-cyan-500 transition-all" style={{ width: `${progress}%` }} />
                   </div>
-                )}
+                </div>
               </>
             )}
 
@@ -340,77 +241,14 @@ const UploadPage = () => {
                 </button>
                 <button
                   onClick={continueToMapping}
-                  className="rounded-full border border-white/10 bg-slate-950/90 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
+                  disabled={savingColumns}
+                  className="rounded-full border border-white/10 bg-slate-950/90 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue to mapping
+                  {savingColumns ? 'Saving…' : 'Continue to mapping →'}
                 </button>
               </div>
             )}
           </div>
-
-          <aside className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
-            <p className="text-sm uppercase tracking-[0.35em] text-cyan-300">Upload summary</p>
-            <h2 className="mt-3 text-2xl font-semibold text-white">Dataset metrics</h2>
-            <p className="mt-4 text-slate-400">Review the key statistics for your uploaded file before moving on to mapping.</p>
-
-            {profile ? (
-              <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
-                <table className="min-w-full divide-y divide-white/10 text-sm text-slate-200">
-                  <tbody>
-                    <tr className="border-b border-white/10">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Rows</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.totalRows.toLocaleString()}</td>
-                    </tr>
-                    <tr className="border-b border-white/10 bg-slate-900/80">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Columns</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.totalColumns}</td>
-                    </tr>
-                    <tr className="border-b border-white/10">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Missing values</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.totalMissingValues.toLocaleString()}</td>
-                    </tr>
-                    <tr className="border-b border-white/10 bg-slate-900/80">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Duplicates</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.totalDuplicateRows.toLocaleString()}</td>
-                    </tr>
-                    <tr className="border-b border-white/10">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Numeric columns</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.numberNumericColumns}</td>
-                    </tr>
-                    <tr className="border-b border-white/10 bg-slate-900/80">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Text columns</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.numberTextColumns}</td>
-                    </tr>
-                    <tr className="border-b border-white/10">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Date columns</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.numberDateColumns}</td>
-                    </tr>
-                    <tr className="bg-slate-900/80">
-                      <th className="px-4 py-3 text-left font-medium text-slate-300">Quality score</th>
-                      <td className="px-4 py-3 text-right text-white">{profile.qualityScore}%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-[24px] border border-white/10 bg-slate-950/70 p-6 text-sm text-slate-300">
-                Upload a file to see dataset metrics and a preview of the first rows here.
-              </div>
-            )}
-
-            {preview.length > 0 && (
-              <div className="mt-8 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/80">
-                <div className="grid min-w-full grid-cols-[1.2fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/70 px-4 py-3 text-sm uppercase tracking-[0.18em] text-slate-400">
-                  {columns.slice(0, 4).map((column) => (
-                    <div key={column}>{column}</div>
-                  ))}
-                </div>
-                <List height={260} itemCount={preview.length} itemSize={44} width="100%">
-                  {Row}
-                </List>
-              </div>
-            )}
-          </aside>
         </div>
       </div>
     </div>
