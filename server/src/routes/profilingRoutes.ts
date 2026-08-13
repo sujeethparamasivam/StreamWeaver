@@ -103,6 +103,7 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
 
     // total rows
     const totalRows = await UploadRow.countDocuments(rowFilter);
+    console.log(`[profiling] uploadId=${uploadId}, owners=${JSON.stringify(owners)}, totalRows=${totalRows}`);
     if (!totalRows) return res.status(404).json({ message: 'No uploaded rows found for this import' });
 
     // column names via aggregation without loading all docs
@@ -259,6 +260,7 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
 
     res.json({ profile });
   } catch (error) {
+    console.error('Profiling error for uploadId:', req.query.uploadId, error);
     res.status(500).json({ message: 'Unable to compute dataset profile', error: String(error) });
   }
 });
