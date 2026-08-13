@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import ImportJob from '../models/ImportJob';
 import UploadRow from '../models/UploadRow';
 import TransformedRow from '../models/TransformedRow';
+import ImportedRow from '../models/ImportedRow';
 import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 import { runTransform } from '../services/sandboxService';
 
@@ -14,6 +15,9 @@ const createJobFilter = (userEmail?: string, userId?: string) => {
   const owners = [userEmail, userId].filter(Boolean) as string[];
   return owners.length ? { createdBy: { $in: owners } } : {};
 };
+
+const TRANSFORM_BATCH_SIZE = 5000;
+const IMPORT_BATCH_SIZE = 5000;
 
 const normalizeMapping = (raw: unknown): Record<string, MappingEntry> => {
   if (!raw || typeof raw !== 'object') return {};
@@ -120,7 +124,7 @@ router.patch('/:uploadId/columns', async (req: AuthedRequest, res: Response) => 
 // `transformCode` attached, the user's JavaScript is executed in the
 // sandbox (see services/sandboxService.ts) with `value` bound to the
 // mapped source value and `row` bound to the whole source row.
-const applyMapping = (row: Record<string, unknown>, mapping: Record<string, MappingEntry>) => {
+const applyMapping = async (row: Record<string, unknown>, mapping: Record<string, MappingEntry>) => {
   const output: Record<string, unknown> = {};
   const errors: string[] = [];
 
@@ -130,7 +134,7 @@ const applyMapping = (row: Record<string, unknown>, mapping: Record<string, Mapp
     const rawValue = row?.[source];
 
     if (transformCode) {
-      const result = runTransform(transformCode, rawValue, row);
+      const result = await runTransform(transformCode, rawValue, row);
       if (result.success) {
         output[dest] = result.value;
       } else {
@@ -155,40 +159,148 @@ router.post('/:uploadId/transform', async (req: AuthedRequest, res: Response) =>
     }
 
     const mapping = normalizeMapping(job.mapping);
-    const rows = await UploadRow.find({ uploadId }).sort({ rowNumber: 1 }).lean();
-
-    if (!rows.length) {
-      return res.status(404).json({ message: 'No uploaded rows found for this import' });
-    }
-
+    const cursor = UploadRow.find({ uploadId }).sort({ rowNumber: 1 }).cursor();
     await TransformedRow.deleteMany({ uploadId });
 
+    const io = req.app.get('io');
+    const totalRows = job.totalRows || 0;
+    let transformedRows = 0;
+    let failedRows = 0;
+    let batchOps: any[] = [];
     const sandboxErrors: string[] = [];
-    const transformedDocs = rows.map((row: { rowNumber: number; data: Record<string, unknown> }) => {
-      const { output, errors } = applyMapping(row.data ?? {}, mapping);
-      if (errors.length) sandboxErrors.push(...errors.map((e) => `Row ${row.rowNumber} - ${e}`));
-      return { uploadId, rowNumber: row.rowNumber, transformedData: output };
-    });
+    const start = Date.now();
 
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < transformedDocs.length; i += BATCH_SIZE) {
-      const chunk = transformedDocs.slice(i, i + BATCH_SIZE);
-      await TransformedRow.bulkWrite(
-        chunk.map((doc) => ({ insertOne: { document: doc } })),
-        { ordered: false }
-      );
+    for await (const row of cursor) {
+      const { output, errors } = await applyMapping(row.data ?? {}, mapping);
+      if (errors.length) {
+        sandboxErrors.push(...errors.map((e) => `Row ${row.rowNumber} - ${e}`));
+      }
+      batchOps.push({ insertOne: { document: { uploadId, rowNumber: row.rowNumber, transformedData: output } } });
+      transformedRows += 1;
+      failedRows += errors.length;
+
+      if (batchOps.length >= TRANSFORM_BATCH_SIZE) {
+        await TransformedRow.bulkWrite(batchOps, { ordered: false });
+        batchOps = [];
+      }
+
+      if (io && totalRows > 0 && transformedRows % 100 === 0) {
+        const elapsedSeconds = Math.max((Date.now() - start) / 1000, 0.001);
+        io.to(uploadId).emit('import-progress', {
+          uploadId,
+          stage: 'transform',
+          progress: Math.min(100, Math.round((transformedRows / totalRows) * 100)),
+          totalRows,
+          rowsProcessed: transformedRows,
+          rowsFailed: failedRows,
+          rowsPerSecond: Math.round(transformedRows / elapsedSeconds),
+          durationMs: Math.round(elapsedSeconds * 1000),
+          batchSize: TRANSFORM_BATCH_SIZE
+        });
+      }
+    }
+
+    if (batchOps.length) {
+      await TransformedRow.bulkWrite(batchOps, { ordered: false });
     }
 
     await ImportJob.findOneAndUpdate({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }, { transformedAt: new Date() });
 
+    if (io) {
+      const elapsedSeconds = Math.max((Date.now() - start) / 1000, 0.001);
+      io.to(uploadId).emit('import-progress', {
+        uploadId,
+        stage: 'transform',
+        progress: 100,
+        totalRows,
+        rowsProcessed: transformedRows,
+        rowsFailed: failedRows,
+        rowsPerSecond: Math.round(transformedRows / elapsedSeconds),
+        durationMs: Math.round(elapsedSeconds * 1000),
+        batchSize: TRANSFORM_BATCH_SIZE
+      });
+    }
+
     res.json({
       message: 'Transformation complete',
-      transformedCount: transformedDocs.length,
+      transformedCount: transformedRows,
       sandboxErrors: sandboxErrors.slice(0, 20)
     });
   } catch (error) {
     res.status(500).json({ message: 'Could not transform rows', error: String(error) });
   }
 });
+router.post('/:uploadId/import', async (req: AuthedRequest, res: Response) => {
+  try {
+    const { uploadId } = req.params;
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email) }).lean();
+    if (!job) return res.status(404).json({ message: 'Import not found' });
 
+    const totalRows = await TransformedRow.countDocuments({ uploadId });
+    if (!totalRows) {
+      return res.status(404).json({ message: 'No transformed rows available for import' });
+    }
+
+    const cursor = TransformedRow.find({ uploadId }).sort({ rowNumber: 1 }).cursor();
+    await ImportedRow.deleteMany({ uploadId });
+
+    const io = req.app.get('io');
+    let importedRows = 0;
+    let batchOps: any[] = [];
+    const start = Date.now();
+
+    for await (const row of cursor) {
+      batchOps.push({ insertOne: { document: { uploadId, rowNumber: row.rowNumber, data: row.transformedData } } });
+      importedRows += 1;
+
+      if (batchOps.length >= IMPORT_BATCH_SIZE) {
+        await ImportedRow.bulkWrite(batchOps, { ordered: false });
+        batchOps = [];
+      }
+
+      if (io && importedRows % 100 === 0) {
+        const elapsedSeconds = Math.max((Date.now() - start) / 1000, 0.001);
+        io.to(uploadId).emit('import-progress', {
+          uploadId,
+          stage: 'import',
+          progress: Math.min(100, Math.round((importedRows / totalRows) * 100)),
+          totalRows,
+          rowsProcessed: importedRows,
+          rowsFailed: 0,
+          rowsPerSecond: Math.round(importedRows / elapsedSeconds),
+          durationMs: Math.round(elapsedSeconds * 1000),
+          batchSize: IMPORT_BATCH_SIZE
+        });
+      }
+    }
+
+    if (batchOps.length) {
+      await ImportedRow.bulkWrite(batchOps, { ordered: false });
+    }
+
+    await ImportJob.findOneAndUpdate(
+      { uploadId, ...createJobFilter(req.user?.email, req.user?.id) },
+      { importedAt: new Date(), importedRows, updatedAt: new Date() }
+    );
+
+    if (io) {
+      const elapsedSeconds = Math.max((Date.now() - start) / 1000, 0.001);
+      io.to(uploadId).emit('import-progress', {
+        uploadId,
+        stage: 'import',
+        progress: 100,
+        totalRows,
+        rowsProcessed: importedRows,
+        rowsFailed: 0,
+        rowsPerSecond: Math.round(importedRows / elapsedSeconds),
+        durationMs: Math.round(elapsedSeconds * 1000),
+        batchSize: IMPORT_BATCH_SIZE
+      });
+    }
+
+    res.json({ message: 'Import complete', importedRows, totalRows });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not import rows', error: String(error) });
+  }
+});
 export default router;

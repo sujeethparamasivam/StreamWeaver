@@ -192,6 +192,20 @@ const MappingPage = () => {
       .filter((row) => row.source.toLowerCase().includes(searchFilter.toLowerCase())),
     [mappingRows, searchFilter]
   );
+  const targetOptions = useMemo(() => {
+    const targets = new Set<string>();
+    mappingRows.forEach((row) => {
+      if (row.target?.trim()) targets.add(row.target.trim());
+    });
+    availableSourceFields.forEach((field) => targets.add(field));
+    return Array.from(targets).sort((a, b) => a.localeCompare(b));
+  }, [availableSourceFields, mappingRows]);
+
+  const selectedTargets = useMemo(
+    () => new Set(mappingRows.filter((row) => row.target.trim()).map((row) => row.target.trim())),
+    [mappingRows]
+  );
+
   const mappedValues = useMemo(() => {
     const values: Record<string, unknown> = {};
     mappingRows.forEach(({ source, target }) => {
@@ -281,7 +295,7 @@ const MappingPage = () => {
           ? `Transformation complete with ${sandboxErrors.length} script warning(s). Preview is ready.`
           : 'Transformation complete. Preview is ready.'
       );
-      navigate('/preview');
+      navigate(`/preview?uploadId=${uploadId}`);
     } catch {
       setError('Unable to run transformation.');
     } finally {
@@ -392,7 +406,7 @@ const MappingPage = () => {
               <div className="hidden grid-cols-[1.5fr_1.4fr_0.9fr] gap-4 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid">
                 <div>Source field</div>
                 <div>Target field</div>
-                <div>Transform</div>
+                <div>Action</div>
               </div>
 
               <div className="max-h-[720px] overflow-y-auto">
@@ -405,12 +419,23 @@ const MappingPage = () => {
                           <div className="font-medium text-white">{row.source}</div>
                         </div>
                         <div>
-                          <input
+                          <label htmlFor={`targetSelect-${row.rowIndex}`} className="sr-only">Target field</label>
+                          <select
+                            id={`targetSelect-${row.rowIndex}`}
                             value={row.target}
                             onChange={(event) => updateMappingRow(row.rowIndex, { target: event.target.value })}
-                            placeholder="Target field name"
                             className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                          />
+                          >
+                            <option value="">None / Do not map</option>
+                            {targetOptions.map((option) => {
+                              const isSelectedElsewhere = option !== row.target && selectedTargets.has(option);
+                              return (
+                                <option key={option} value={option} disabled={isSelectedElsewhere}>
+                                  {option}
+                                </option>
+                              );
+                            })}
+                          </select>
                         </div>
                         <div className="flex items-center justify-between gap-3 sm:justify-end">
                           <button
@@ -458,7 +483,7 @@ const MappingPage = () => {
                 {saving ? 'Processing…' : 'Run transformation'}
               </button>
               <button
-                onClick={() => navigate('/preview')}
+                onClick={() => navigate(`/preview?uploadId=${uploadId}`)}
                 className="rounded-full border border-white/10 bg-slate-900 px-5 py-3 text-sm text-slate-100 transition hover:bg-slate-800"
               >
                 Go to preview

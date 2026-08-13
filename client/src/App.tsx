@@ -32,6 +32,7 @@ const App = () => {
           <Route path="preview" element={<PreviewPage />} />
           <Route path="mapping" element={<MappingPage />} />
           <Route path="validations" element={<ValidationPage />} />
+          <Route path="validation" element={<ValidationPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

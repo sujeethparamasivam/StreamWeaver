@@ -18,10 +18,16 @@ export const joinRoom = (room: string) => {
 
 export interface ImportProgressPayload {
   uploadId: string;
-  progress: number;
-  rowsProcessed: number;
-  rowsFailed: number;
+  stage?: 'upload' | 'transform' | 'import';
+  progress?: number;
+  fileSize?: number;
+  totalRows?: number;
+  rowsProcessed?: number;
+  rowsFailed?: number;
   rowsPerSecond?: number;
+  durationMs?: number;
+  batchSize?: number;
+  memoryUsage?: Record<string, number>;
   error?: string;
 }
 

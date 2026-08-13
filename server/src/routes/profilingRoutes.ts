@@ -31,6 +31,9 @@ type DatasetProfile = {
   numberDateColumns: number;
   datasetSize: number;
   qualityScore: number;
+  rowsWithMissingData: number;
+  completeRows: number;
+  missingDataPercentage: number;
   qualityBreakdown: {
     completeness: number;
     validity: number;
@@ -125,6 +128,11 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
     const numberNumericColumns = columns.filter((col) => col.type === 'number').length;
     const numberDateColumns = columns.filter((col) => col.type === 'date').length;
     const numberTextColumns = columns.filter((col) => col.type === 'string').length;
+    const rowsWithMissingData = docs.filter((doc) => columnNames.some((column) => isMissingValue(doc.data?.[column]))).length;
+    const completeRows = totalRows - rowsWithMissingData;
+    const missingDataPercentage = totalRows && columnNames.length
+      ? Math.round((totalMissingValues / (totalRows * columnNames.length)) * 100)
+      : 0;
 
     const profile: DatasetProfile = {
       totalRows,
@@ -136,6 +144,9 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
       numberDateColumns,
       datasetSize,
       qualityScore: 0,
+      rowsWithMissingData,
+      completeRows,
+      missingDataPercentage,
       qualityBreakdown: { completeness: 0, validity: 0, uniqueness: 0, consistency: 0 },
       columns
     };

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
 interface ImportJob {
@@ -13,9 +14,12 @@ interface ImportJob {
 }
 
 const HistoryPage = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const currentUploadId = searchParams.get('uploadId') ?? '';
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -72,16 +76,20 @@ const HistoryPage = () => {
 
       {!loading && jobs.length > 0 && (
         <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
-          <div className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
+          <div className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.9fr] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
             <div>Dataset</div>
             <div>Status</div>
             <div>Rows</div>
             <div>Failed</div>
             <div>Started</div>
+            <div>Action</div>
           </div>
           <div className="max-h-[560px] overflow-auto px-4 py-4">
             {jobs.map((job) => (
-              <div key={job.uploadId} className="grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-4 border-b border-white/10 py-3 text-sm text-slate-200 last:border-b-0">
+              <div
+                key={job.uploadId}
+                className={`grid min-w-full grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.9fr] gap-4 border-b border-white/10 py-3 text-sm text-slate-200 last:border-b-0 ${job.uploadId === currentUploadId ? 'bg-slate-800/60' : ''}`}
+              >
                 <div className="truncate">{job.fileName}</div>
                 <div>
                   <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${job.status === 'completed' ? 'bg-emerald-500/15 text-emerald-200' : job.status === 'failed' ? 'bg-rose-500/15 text-rose-200' : 'bg-amber-500/15 text-amber-200'}`}>
@@ -91,6 +99,15 @@ const HistoryPage = () => {
                 <div>{job.totalRows.toLocaleString()}</div>
                 <div>{job.failedRows.toLocaleString()}</div>
                 <div>{job.startedAt ? new Date(job.startedAt).toLocaleDateString() : '—'}</div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/validations?uploadId=${job.uploadId}`)}
+                    className="rounded-full border border-white/10 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
+                  >
+                    Inspect
+                  </button>
+                </div>
               </div>
             ))}
           </div>

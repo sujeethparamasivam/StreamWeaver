@@ -2,8 +2,13 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import fs, { createReadStream, unlink } from 'node:fs';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { parse } from 'csv-parse';
+// stream-json does not ship TypeScript declarations for the streamer paths.
+// Silence the compiler here and treat as any at runtime.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { streamArray } from 'stream-json/streamers/StreamArray';
 import UploadRow from '../models/UploadRow';
 import ImportJob from '../models/ImportJob';
 import ValidationRecord from '../models/ValidationRecord';
@@ -83,33 +88,9 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
   // *before* the upload starts, so progress can be streamed back live.
   const uploadId = (typeof req.body.clientUploadId === 'string' && req.body.clientUploadId.trim())
     || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const owner = req.user?.email || req.user?.id;
+  const startedAt = new Date();
 
-  let totalRows = 0;
-  let failedRows = 0;
-  const firstRecords: Record<string, unknown>[] = [];
-  const detectedColumns = new Set<string>();
-  const startedAt = Date.now();
-  let lastEmit = 0;
-
-  const emitProgress = (bytesRead: number, force = false) => {
-    if (!io) return;
-    const now = Date.now();
-    if (!force && now - lastEmit < PROGRESS_THROTTLE_MS) return;
-    lastEmit = now;
-
-    const elapsedSeconds = Math.max((now - startedAt) / 1000, 0.001);
-    const progress = fileSize > 0 ? Math.min(100, Math.round((bytesRead / fileSize) * 100)) : 0;
-
-    io.to(uploadId).emit('import-progress', {
-      uploadId,
-      progress,
-      rowsProcessed: totalRows,
-      rowsFailed: failedRows,
-      rowsPerSecond: Math.round(totalRows / elapsedSeconds)
-    });
-  };
-
-  const owner = req.user?.email ?? req.user?.id;
   const job = await ImportJob.create({
     uploadId,
     fileName,
@@ -120,8 +101,40 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
     columns: [],
     selectedColumns: [],
     createdBy: owner,
-    startedAt: new Date()
+    startedAt,
+    importedRows: 0
   });
+
+  let totalRows = 0;
+  let failedRows = 0;
+  const firstRecords: Record<string, unknown>[] = [];
+  const detectedColumns = new Set<string>();
+  let lastEmit = 0;
+
+  const emitProgress = (bytesRead: number, force = false) => {
+    if (!io) return;
+    const now = Date.now();
+    if (!force && now - lastEmit < PROGRESS_THROTTLE_MS) return;
+    lastEmit = now;
+
+    const elapsedSeconds = Math.max((now - startedAt.getTime()) / 1000, 0.001);
+    const progress = fileSize > 0 ? Math.min(100, Math.round((bytesRead / fileSize) * 100)) : 0;
+    const memoryUsage = process.memoryUsage();
+
+    io.to(uploadId).emit('import-progress', {
+      uploadId,
+      stage: 'upload',
+      progress,
+      fileSize,
+      totalRows,
+      rowsProcessed: totalRows,
+      rowsFailed: failedRows,
+      rowsPerSecond: Math.round(totalRows / elapsedSeconds),
+      durationMs: Math.round(elapsedSeconds * 1000),
+      memoryUsage,
+      batchSize: BATCH_SIZE
+    });
+  };
 
   try {
     let source: NodeJS.ReadableStream;
@@ -132,11 +145,18 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
         .pipe(byteCounter)
         .pipe(parse({ columns: true, skip_empty_lines: true }));
     } else if (extension === '.json') {
-      const raw = await fs.promises.readFile(filePath, 'utf8');
-      const parsed = JSON.parse(raw);
-      const records = Array.isArray(parsed) ? parsed : [parsed];
-      emitProgress(fileSize, true);
-      source = Readable.from(records);
+      const jsonParser = streamArray();
+      const valueTransform = new Transform({
+        objectMode: true,
+        transform(chunk, _encoding, callback) {
+          callback(null, (chunk as any).value);
+        }
+      });
+
+      source = createReadStream(filePath)
+        .pipe(new ByteCounterStream((bytesRead) => emitProgress(bytesRead)))
+        .pipe(jsonParser)
+        .pipe(valueTransform);
     } else {
       await ImportJob.findByIdAndUpdate(job._id, { status: 'failed', finishedAt: new Date() });
       return res.status(400).json({ message: 'Unsupported file type' });

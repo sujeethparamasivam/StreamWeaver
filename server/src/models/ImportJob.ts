@@ -11,6 +11,8 @@ export interface IImportJob extends Document {
   selectedColumns?: string[];
   mapping?: Record<string, string>;
   transformedAt?: Date;
+  importedAt?: Date;
+  importedRows?: number;
   createdBy?: string;
   startedAt?: Date;
   finishedAt?: Date;
@@ -29,7 +31,9 @@ const importJobSchema = new Schema<IImportJob>(
     mapping: { type: Schema.Types.Mixed, default: {} },
     createdBy: { type: String },
     startedAt: { type: Date },
-    finishedAt: { type: Date }
+    finishedAt: { type: Date },
+    importedAt: { type: Date },
+    importedRows: { type: Number, default: 0 }
   },
   { timestamps: true }
 );

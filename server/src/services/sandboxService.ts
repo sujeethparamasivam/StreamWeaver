@@ -1,21 +1,21 @@
 import vm from 'node:vm';
 
-/**
- * Sandboxed execution of user-defined transformation code.
- *
- * NOTE: The original spec called for `isolated-vm`, which ships a prebuilt
- * native addon that must be downloaded/compiled from the network. This
- * environment has no network access, so we fall back to Node's built-in
- * `vm` module instead. It is not a perfect security boundary (a
- * sufficiently determined script can still reach for constructor tricks),
- * but combined with:
- *   - a fresh V8 context per call (no access to the host's globals/modules)
- *   - a hard execution timeout
- *   - a minimal, whitelisted sandbox object (only `value` and `row`)
- * it safely covers the intended use case: small expressions like
- * `return value.toUpperCase()`. Swap this module out for `isolated-vm`
- * (same function signature) if/when native builds are available.
- */
+let ivm: any = null;
+
+const loadIsolatedVm = async () => {
+  if (ivm !== null) return ivm;
+    try {
+      // dynamic import; if native addon isn't present the import will fail
+      // and we'll fall back to the built-in vm implementation.
+      // Silence the compiler about missing declaration files for the
+      // optional native dependency.
+      // @ts-ignore
+      ivm = await import('isolated-vm');
+    } catch {
+    ivm = null;
+  }
+  return ivm;
+};
 
 export interface SandboxResult {
   success: boolean;
@@ -24,14 +24,37 @@ export interface SandboxResult {
 }
 
 const EXECUTION_TIMEOUT_MS = 50;
+const MEMORY_LIMIT_MB = 32;
 
-export function runTransform(
+export async function runTransform(
   code: string,
   value: unknown,
   row: Record<string, unknown>
-): SandboxResult {
+): Promise<SandboxResult> {
   if (!code || !code.trim()) {
     return { success: true, value };
+  }
+
+  const isolatedVm = await loadIsolatedVm();
+  if (isolatedVm) {
+    try {
+      const isolate = new isolatedVm.Isolate({ memoryLimit: MEMORY_LIMIT_MB });
+      const context = await isolate.createContext();
+      const jail = context.global;
+      await jail.set('global', jail.derefInto());
+      await jail.set('value', new isolatedVm.ExternalCopy(value).copyInto());
+      await jail.set('row', new isolatedVm.ExternalCopy(row).copyInto());
+
+      const script = await isolate.compileScript(`(function() {\n${code}\n})()`);
+      const result = await script.run(context, { timeout: EXECUTION_TIMEOUT_MS });
+      const output = result instanceof isolatedVm.Reference ? await result.copy() : result;
+      return { success: true, value: output };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   const sandbox = Object.freeze({ value, row });

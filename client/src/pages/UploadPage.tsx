@@ -27,9 +27,9 @@ const UploadPage = () => {
   useEffect(() => {
     const unsubscribe = onImportProgress((payload) => {
       if (payload.uploadId !== clientUploadIdRef.current) return;
-      setProgress(payload.progress);
-      setRowsProcessed(payload.rowsProcessed);
-      setRowsFailed(payload.rowsFailed);
+      setProgress(payload.progress ?? 0);
+      setRowsProcessed(payload.rowsProcessed ?? 0);
+      setRowsFailed(payload.rowsFailed ?? 0);
       setRowsPerSecond(payload.rowsPerSecond ?? 0);
     });
     return unsubscribe;
@@ -50,10 +50,17 @@ const UploadPage = () => {
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     clientUploadIdRef.current = clientUploadId;
 
+    setFileName('');
+    setUploadId('');
+    setTotalRows(null);
+    setAvailableColumns([]);
+    setSelectedColumns([]);
+    setProfile(null);
     setProgress(0);
     setRowsProcessed(0);
     setRowsFailed(0);
     setRowsPerSecond(0);
+    setError('');
     setLoading(true);
 
     joinRoom(clientUploadId);

@@ -1,34 +1,50 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FixedSizeList as List } from 'react-window';
 import api from '../services/api';
 
 const PreviewPage = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const uploadId = searchParams.get('uploadId')?.trim() ?? '';
   const [rows, setRows] = useState<Array<{ transformedData?: Record<string, unknown> }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const uploadId = searchParams.get('uploadId')?.trim() ?? '';
+
     const loadPreview = async () => {
+      if (!uploadId) {
+        setError('Please select a dataset before viewing preview.');
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
       try {
-        const response = await api.get('/transformed/latest');
+        const response = await api.get(`/transformed/${uploadId}`);
         setRows(response.data.rows ?? []);
       } catch (err) {
-        setError('Unable to load transformed preview rows.');
+        setError('Unable to load transformed preview rows for this upload.');
       } finally {
         setLoading(false);
       }
     };
 
     void loadPreview();
-  }, []);
+  }, [searchParams]);
 
   const columns = useMemo(() => (rows.length ? Object.keys(rows[0].transformedData ?? {}) : []), [rows]);
 
+  const gridTemplateColumns = columns.length > 1 ? `1.4fr repeat(${columns.length - 1}, 1fr)` : '1.4fr';
+
   const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const data = rows[index].transformedData ?? {};
+    const rowStyle: React.CSSProperties = { ...style, display: 'grid', gridTemplateColumns, gap: 16 };
     return (
-      <div style={style} className="grid min-w-full grid-cols-[1.4fr_repeat(3,1fr)] gap-4 border-b border-white/10 px-4 text-sm text-slate-200 items-center">
-        {columns.slice(0, 4).map((column) => (
+      <div style={rowStyle} className="min-w-full border-b border-white/10 px-4 text-sm text-slate-200 items-center">
+        {columns.map((column) => (
           <div key={column} className="truncate">{String(data[column] ?? '')}</div>
         ))}
       </div>
@@ -52,6 +68,16 @@ const PreviewPage = () => {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Rows visible: {totals.rows}</div>
             <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Columns shown: {totals.columns}</div>
+            <div className="sm:col-span-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => navigate(`/validation?uploadId=${uploadId}`)}
+                disabled={!uploadId}
+                className="rounded-full border border-white/10 bg-slate-900 px-5 py-3 text-sm text-slate-100 transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Validate this dataset
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -65,8 +91,8 @@ const PreviewPage = () => {
 
       {!loading && rows.length > 0 && (
         <div className="overflow-hidden rounded-[32px] border border-white/10 bg-slate-900/80 shadow-2xl">
-          <div className="grid min-w-full grid-cols-[1.4fr_repeat(3,1fr)] gap-4 border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
-            {columns.slice(0, 4).map((column) => (
+          <div style={{ display: 'grid', gridTemplateColumns, gap: 16 }} className="min-w-full border-b border-white/10 bg-slate-950/80 px-4 py-4 text-sm uppercase tracking-[0.18em] text-slate-400">
+            {columns.map((column) => (
               <div key={column}>{column}</div>
             ))}
           </div>
