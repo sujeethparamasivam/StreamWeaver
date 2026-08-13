@@ -49,40 +49,62 @@ router.get('/', async (req: AuthedRequest, res: Response) => {
     const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }).lean();
     if (!job) return res.status(404).json({ message: 'Import job not found' });
 
-    const docs = await UploadRow.find(filter).sort({ rowNumber: 1 }).lean();
-    if (!docs.length) return res.status(404).json({ message: 'No uploaded rows found for this import' });
-
-    const allColumnNames = Array.from(new Set(docs.flatMap((doc) => Object.keys(doc.data ?? {}))));
+    // get column names via aggregation
+    const colsAgg = await UploadRow.aggregate([
+      { $match: filter },
+      { $project: { kv: { $objectToArray: '$data' } } },
+      { $unwind: '$kv' },
+      { $group: { _id: null, keys: { $addToSet: '$kv.k' } } },
+      { $project: { _id: 0, keys: 1 } }
+    ]).allowDiskUse(true);
+    const allColumnNames: string[] = (colsAgg[0]?.keys ?? []) as string[];
     const selectedColumnNames = Array.isArray(job.selectedColumns) && job.selectedColumns.length
       ? job.selectedColumns.filter((column) => allColumnNames.includes(column))
       : allColumnNames;
 
-    const totalRows = docs.length;
-    let rowsWithMissingData = 0;
-    let totalMissingValues = 0;
+    const totalRows = await UploadRow.countDocuments(filter);
+    if (!totalRows) return res.status(404).json({ message: 'No uploaded rows found for this import' });
 
-    const columns: MissingColumnSummary[] = selectedColumnNames.map((column) => {
-      const values = docs.map((doc) => doc.data?.[column]);
-      const parsed = values.map((value) => parseValue(value));
-      const missingValues = parsed.filter((value) => isMissingValue(value)).length;
+    let totalMissingValues = 0;
+    const columns: MissingColumnSummary[] = [];
+
+    for (const column of selectedColumnNames) {
+      const missingValues = await UploadRow.countDocuments({
+        ...filter,
+        $or: [ { [`data.${column}`]: { $exists: false } }, { [`data.${column}`]: null }, { [`data.${column}`]: '' } ]
+      });
       totalMissingValues += missingValues;
-      return {
+
+      // sample up to 3 non-missing values
+      const sample = await UploadRow.aggregate([
+        { $match: { ...filter, [`data.${column}`]: { $nin: [null, ''] } } },
+        { $project: { v: `$data.${column}` } },
+        { $limit: 3 }
+      ]).allowDiskUse(true);
+
+      const typeAgg = await UploadRow.aggregate([
+        { $match: filter },
+        { $project: { t: { $type: `$data.${column}` } } },
+        { $group: { _id: '$t', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 1 }
+      ]).allowDiskUse(true);
+      const predominantType = typeAgg[0]?._id ?? 'string';
+
+      columns.push({
         name: column,
         totalRows,
         missingValues,
-        missingPercentage: values.length ? Math.round((missingValues / values.length) * 10000) / 100 : 0,
-        completeCount: values.length - missingValues,
-        type: getColumnStats(values).type,
-        sampleValues: values.filter((value) => !isMissingValue(value)).slice(0, 3)
-      };
-    });
-
-    for (const doc of docs) {
-      const rowValues = selectedColumnNames.map((column) => parseValue(doc.data?.[column]));
-      if (rowValues.some((value) => isMissingValue(value))) {
-        rowsWithMissingData += 1;
-      }
+        missingPercentage: totalRows ? Math.round((missingValues / totalRows) * 10000) / 100 : 0,
+        completeCount: totalRows - missingValues,
+        type: predominantType === 'double' || predominantType === 'int' || predominantType === 'long' ? 'number' : (predominantType === 'date' ? 'date' : 'string'),
+        sampleValues: (sample.map((s: any) => s.v) ?? []).slice(0, 3)
+      });
     }
+
+    // rows with any missing column
+    const orConditions = selectedColumnNames.map((c) => ({ [`data.${c}`]: { $in: [null, ''] } }));
+    const rowsWithMissingData = await UploadRow.countDocuments({ ...filter, $or: orConditions });
 
     const summary = {
       totalRows,
@@ -108,28 +130,46 @@ router.post('/', async (req: AuthedRequest, res: Response) => {
 
     const owners = [req.user?.email, req.user?.id].filter(Boolean) as string[];
     const filter: any = { uploadId, createdBy: { $in: owners } };
-    const docs = await UploadRow.find(filter).sort({ rowNumber: 1 }).lean();
-    if (!docs.length) return res.status(404).json({ message: 'No uploaded rows found for this import' });
-
-    const values = docs.map((doc) => parseValue(doc.data?.[column]));
-    const stats = getColumnStats(values);
-    const replacement: any = strategy === 'fill' ? normalizeReplacement(fillValue, stats.type) : strategy === 'mean' ? stats.mean : strategy === 'median' ? stats.median : strategy === 'mode' ? stats.mode : null;
-
     if (strategy === 'remove') {
-      await UploadRow.deleteMany({ uploadId, createdBy: { $in: owners }, $expr: { $eq: [{ $ifNull: [`$data.${column}`, null] }, null] } });
+      await UploadRow.deleteMany({ uploadId, createdBy: { $in: owners }, $or: [{ [`data.${column}`]: { $exists: false } }, { [`data.${column}`]: null }, { [`data.${column}`]: '' }] });
     } else if (strategy !== 'keep') {
-      if (replacement === null && strategy !== 'mode') {
+      // compute replacement using aggregations when necessary
+      let replacement: any = null;
+      if (strategy === 'fill') {
+        replacement = normalizeReplacement(fillValue, 'string');
+      } else if (strategy === 'mean') {
+        const agg = await UploadRow.aggregate([
+          { $match: { ...filter, [`data.${column}`]: { $type: 'number' } } },
+          { $group: { _id: null, avg: { $avg: `$data.${column}` } } }
+        ]).allowDiskUse(true);
+        replacement = agg[0]?.avg ?? null;
+      } else if (strategy === 'median') {
+        const sampleAgg = await UploadRow.aggregate([
+          { $match: { ...filter, [`data.${column}`]: { $type: 'number' } } },
+          { $sample: { size: 1000 } },
+          { $project: { v: `$data.${column}` } }
+        ]).allowDiskUse(true);
+        const vals = sampleAgg.map((s: any) => Number(s.v)).filter((v: number) => Number.isFinite(v)).sort((a: number, b: number) => a - b);
+        if (vals.length) {
+          const mid = Math.floor(vals.length / 2);
+          replacement = vals.length % 2 === 1 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+        }
+      } else if (strategy === 'mode') {
+        const modeAgg = await UploadRow.aggregate([
+          { $match: { ...filter } },
+          { $group: { _id: `$data.${column}`, count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 1 }
+        ]).allowDiskUse(true);
+        replacement = modeAgg[0]?._id ?? null;
+      }
+
+      if (replacement === null && strategy !== 'mode' && strategy !== 'fill') {
         return res.status(400).json({ message: 'Invalid replacement value for selected strategy' });
       }
-      const rows = await UploadRow.find(filter).lean();
-      for (const row of rows) {
-        const current = parseValue(row.data?.[column]);
-        if (isMissingValue(current)) {
-          const updateObj: any = {};
-          updateObj[`data.${column}`] = replacement ?? null;
-          await UploadRow.updateOne({ _id: row._id }, { $set: updateObj });
-        }
-      }
+
+      // perform bulk update for missing values
+      await UploadRow.updateMany({ ...filter, $or: [{ [`data.${column}`]: { $exists: false } }, { [`data.${column}`]: null }, { [`data.${column}`]: '' }] }, { $set: { [`data.${column}`]: replacement ?? null } });
     }
 
 

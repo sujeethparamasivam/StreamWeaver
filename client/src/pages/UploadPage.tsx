@@ -80,8 +80,10 @@ const UploadPage = () => {
 
       const profileResponse = await api.get('/profiling', { params: { uploadId: id } });
       setProfile(profileResponse.data.profile);
-    } catch (err) {
-      setError('Upload failed. Please try again.');
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.message || err?.message || 'Upload failed. Please try again.';
+      console.error('Upload page error:', err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

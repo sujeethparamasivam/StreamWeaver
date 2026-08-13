@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FixedSizeList as List } from 'react-window';
 import api from '../services/api';
+import MemoryAudit from '../components/MemoryAudit';
 
 const PreviewPage = () => {
   const [searchParams] = useSearchParams();
@@ -78,6 +79,11 @@ const PreviewPage = () => {
                 Validate this dataset
               </button>
             </div>
+            {uploadId && (
+              <div className="sm:col-span-2 mt-2">
+                <MemoryAudit uploadId={uploadId} />
+              </div>
+            )}
           </div>
         </div>
       </section>

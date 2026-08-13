@@ -16,6 +16,14 @@ export interface IImportJob extends Document {
   createdBy?: string;
   startedAt?: Date;
   finishedAt?: Date;
+  memoryAudit?: {
+    peakRss?: number;
+    peakHeap?: number;
+    avgRss?: number;
+    avgHeap?: number;
+    samples?: number;
+    savedAt?: Date;
+  };
 }
 
 const importJobSchema = new Schema<IImportJob>(
@@ -34,6 +42,8 @@ const importJobSchema = new Schema<IImportJob>(
     finishedAt: { type: Date },
     importedAt: { type: Date },
     importedRows: { type: Number, default: 0 }
+    ,
+    memoryAudit: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: true }
 );

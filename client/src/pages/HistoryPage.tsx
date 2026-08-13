@@ -100,13 +100,61 @@ const HistoryPage = () => {
                 <div>{job.failedRows.toLocaleString()}</div>
                 <div>{job.startedAt ? new Date(job.startedAt).toLocaleDateString() : '—'}</div>
                 <div>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/validations?uploadId=${job.uploadId}`)}
-                    className="rounded-full border border-white/10 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
-                  >
-                    Inspect
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/validations?uploadId=${job.uploadId}`)}
+                      className="rounded-full border border-white/10 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
+                    >
+                      Inspect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/audit?uploadId=${job.uploadId}`)}
+                      className="rounded-full border border-white/10 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20"
+                    >
+                      Audit
+                    </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          // confirm and delete
+                          // eslint-disable-next-line no-restricted-globals
+                          if (!confirm(`Delete dataset ${job.fileName}? This will remove all related data.`)) return;
+                          try {
+                            await api.delete(`/imports/${job.uploadId}`);
+                            // refresh list
+                            const resp = await api.get('/imports');
+                            setJobs(resp.data.jobs ?? []);
+                          } catch (err: any) {
+                            // eslint-disable-next-line no-console
+                            console.error('Delete failed', err);
+                            const msg = err?.response?.data?.message || err?.message || 'Failed to delete dataset';
+                            const details = err?.response?.data?.details ? `: ${JSON.stringify(err.response.data.details)}` : '';
+                            // If import not found, allow admin force-delete retry
+                            if (msg === 'Import not found' && /* eslint-disable-next-line no-restricted-globals */ confirm('Import not found for your account. Try force-delete as admin?')) {
+                              try {
+                                await api.delete(`/imports/${job.uploadId}?force=true`);
+                                const resp = await api.get('/imports');
+                                setJobs(resp.data.jobs ?? []);
+                                return;
+                              } catch (err2: any) {
+                                // eslint-disable-next-line no-console
+                                console.error('Force delete failed', err2);
+                                const m2 = err2?.response?.data?.message || err2?.message || 'Force delete failed';
+                                alert(`${m2}${err2?.response?.data?.details ? `: ${JSON.stringify(err2.response.data.details)}` : ''}`);
+                                return;
+                              }
+                            }
+
+                            alert(`${msg}${details}`);
+                          }
+                        }}
+                        className="rounded-full border border-white/10 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/20"
+                      >
+                        Remove
+                      </button>
+                  </div>
                 </div>
               </div>
             ))}

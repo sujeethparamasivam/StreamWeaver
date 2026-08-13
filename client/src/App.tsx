@@ -9,6 +9,7 @@ import MappingPage from './pages/MappingPage';
 import CleaningPage from './pages/CleaningPage';
 import ValidationPage from './pages/ValidationPage';
 import HistoryPage from './pages/HistoryPage';
+import AuditPage from './pages/AuditPage';
 import SettingsPage from './pages/SettingsPage';
 import AppShell from './components/AppShell';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -34,6 +35,7 @@ const App = () => {
           <Route path="validations" element={<ValidationPage />} />
           <Route path="validation" element={<ValidationPage />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="audit" element={<AuditPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,6 +3,8 @@ import ImportJob from '../models/ImportJob';
 import UploadRow from '../models/UploadRow';
 import TransformedRow from '../models/TransformedRow';
 import ImportedRow from '../models/ImportedRow';
+import MemorySample from '../models/MemorySample';
+import ValidationRecord from '../models/ValidationRecord';
 import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 import { runTransform } from '../services/sandboxService';
 
@@ -71,6 +73,29 @@ router.get('/:uploadId', async (req: AuthedRequest, res: Response) => {
     res.json({ job });
   } catch (error) {
     res.status(500).json({ message: 'Could not load import', error: String(error) });
+  }
+});
+
+// Memory audit summary for an upload
+router.get('/:uploadId/audit', async (req: AuthedRequest, res: Response) => {
+  try {
+    const { uploadId } = req.params;
+    const samples = await MemorySample.find({ uploadId }).sort({ ts: 1 }).lean();
+    if (!samples.length) return res.json({ samples: [], summary: null });
+
+    const peakRss = Math.max(...samples.map((s: any) => s.rss));
+    const peakHeap = Math.max(...samples.map((s: any) => s.heapUsed));
+    const avgRss = Math.round(samples.reduce((a: number, b: any) => a + b.rss, 0) / samples.length);
+    const avgHeap = Math.round(samples.reduce((a: number, b: any) => a + b.heapUsed, 0) / samples.length);
+
+    const memoryLimitMB = Number(process.env.MEMORY_AUDIT_LIMIT_MB ?? '150');
+    const peakRssMB = Math.round(peakRss / 1024 / 1024);
+    const pass = peakRssMB <= memoryLimitMB;
+
+    const summary = { peakRss, peakHeap, avgRss, avgHeap, samples: samples.length };
+    res.json({ summary, memoryLimitMB, peakRssMB, pass, samples });
+  } catch (error) {
+    res.status(500).json({ message: 'Unable to load memory audit', error: String(error) });
   }
 });
 
@@ -301,6 +326,76 @@ router.post('/:uploadId/import', async (req: AuthedRequest, res: Response) => {
     res.json({ message: 'Import complete', importedRows, totalRows });
   } catch (error) {
     res.status(500).json({ message: 'Could not import rows', error: String(error) });
+  }
+});
+
+// Delete an entire import dataset and related records (UploadRows, TransformedRow, ImportedRow, ValidationRecord, MemorySample)
+router.delete('/:uploadId', async (req: AuthedRequest, res: Response) => {
+  try {
+    const { uploadId } = req.params;
+    const force = req.query.force === 'true';
+    const ownerFilter = { uploadId, ...createJobFilter(req.user?.email, req.user?.id) };
+    let job = await ImportJob.findOne(ownerFilter).lean();
+
+    // If not found and caller requested force and is admin, try locating without owner filter
+    if (!job && force && req.user?.role === 'admin') {
+      job = await ImportJob.findOne({ uploadId }).lean();
+      if (!job) return res.status(404).json({ message: 'Import not found' });
+    }
+
+    if (!job) return res.status(404).json({ message: 'Import not found' });
+
+    // attempt deletions individually to gather detailed failures and ensure owner filter on ImportJob
+    const errors: string[] = [];
+    try {
+      await UploadRow.deleteMany({ uploadId });
+    } catch (e: any) {
+      errors.push(`UploadRow: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting UploadRow for', uploadId, e);
+    }
+
+    try {
+      await TransformedRow.deleteMany({ uploadId });
+    } catch (e: any) {
+      errors.push(`TransformedRow: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting TransformedRow for', uploadId, e);
+    }
+
+    try {
+      await ImportedRow.deleteMany({ uploadId });
+    } catch (e: any) {
+      errors.push(`ImportedRow: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting ImportedRow for', uploadId, e);
+    }
+
+    try {
+      await ValidationRecord.deleteMany({ uploadId });
+    } catch (e: any) {
+      errors.push(`ValidationRecord: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting ValidationRecord for', uploadId, e);
+    }
+
+    try {
+      await MemorySample.deleteMany({ uploadId });
+    } catch (e: any) {
+      errors.push(`MemorySample: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting MemorySample for', uploadId, e);
+    }
+
+    try {
+      await ImportJob.deleteOne({ uploadId });
+    } catch (e: any) {
+      errors.push(`ImportJob: ${e?.message ?? String(e)}`);
+      console.error('Failed deleting ImportJob for', uploadId, e);
+    }
+
+    if (errors.length) {
+      return res.status(500).json({ message: 'Failed to delete some records', details: errors });
+    }
+
+    res.json({ message: 'Import and related data deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not delete import', error: String(error) });
   }
 });
 export default router;

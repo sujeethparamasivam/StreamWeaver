@@ -36,6 +36,10 @@ export async function runTransform(
   }
 
   const isolatedVm = await loadIsolatedVm();
+  if (!isolatedVm) {
+    return { success: false, error: 'Server sandbox unavailable: isolated-vm is not installed or failed to load. Contact administrator.' };
+  }
+
   if (isolatedVm) {
     try {
       const isolate = new isolatedVm.Isolate({ memoryLimit: MEMORY_LIMIT_MB });
@@ -56,21 +60,6 @@ export async function runTransform(
       };
     }
   }
-
-  const sandbox = Object.freeze({ value, row });
-  const context = vm.createContext({ ...sandbox }, {
-    codeGeneration: { strings: false, wasm: false }
-  });
-
-  try {
-    const wrapped = `(function() {\n${code}\n})()`;
-    const script = new vm.Script(wrapped, { filename: 'user-transform.js' });
-    const output = script.runInContext(context, { timeout: EXECUTION_TIMEOUT_MS });
-    return { success: true, value: output };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
+  // Should never reach here because we require isolated-vm above.
+  return { success: false, error: 'Unexpected error: sandbox fallback disabled.' };
 }
