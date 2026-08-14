@@ -20,7 +20,7 @@ import { BatchTransformStream, RowNumberingStream, ByteCounterStream } from '../
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
 
-const BATCH_SIZE = Number(process.env.UPLOAD_BATCH_SIZE ?? '1000');
+const BATCH_SIZE = Number(process.env.UPLOAD_BATCH_SIZE ?? '5000');
 const PREVIEW_LIMIT = 1000;
 const PROGRESS_THROTTLE_MS = Number(process.env.PROGRESS_THROTTLE_MS ?? '300');
 
@@ -383,6 +383,7 @@ function scheduleMemorySample(uploadId: string, sample: any) {
       }
 
       if (firstChar === '[') {
+        // Streaming JSON array using stream-json
         const jsonParser = streamArray();
         const valueTransform = new Transform({
           objectMode: true,
@@ -395,19 +396,53 @@ function scheduleMemorySample(uploadId: string, sample: any) {
           .pipe(new ByteCounterStream((bytesRead) => emitProgress(bytesRead)))
           .pipe(jsonParser)
           .pipe(valueTransform);
-      } else {
-        // Fallback: read entire JSON file and emit as array of records.
-        // This supports top-level objects and NDJSON where the file is small
-        // enough to parse in memory. For very large top-level objects this
-        // may be memory-heavy, but it prevents the server from crashing.
-        const data = await fs.promises.readFile(filePath, 'utf8');
+      } else if (firstChar === '{') {
+        // Top-level object: emit as single-item array
+        // This is not ideal for streaming but handles the case safely
+        const byteCounter = new ByteCounterStream((bytesRead) => emitProgress(bytesRead));
+        const readStream = createReadStream(filePath);
+        
+        // First, count bytes
+        readStream.pipe(byteCounter);
+        
+        // Read the full object and emit as a single item
+        const chunks: Buffer[] = [];
+        for await (const chunk of readStream) {
+          chunks.push(chunk as Buffer);
+        }
+        
+        const data = Buffer.concat(chunks).toString('utf8');
         let parsed: any;
         try {
           parsed = JSON.parse(data);
         } catch (err) {
-          throw err;
+          throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
         }
-
+        
+        // Treat top-level object as single record
+        emitProgress(fileSize, true);
+        source = Readable.from([parsed]);
+      } else {
+        // Unknown format - attempt to parse as JSON
+        // This handles newline-delimited JSON (NDJSON) inefficiently
+        // but allows the server to process small JSON files safely
+        const byteCounter = new ByteCounterStream((bytesRead) => emitProgress(bytesRead));
+        const readStream = createReadStream(filePath);
+        readStream.pipe(byteCounter);
+        
+        const chunks: Buffer[] = [];
+        for await (const chunk of readStream) {
+          chunks.push(chunk as Buffer);
+        }
+        
+        const data = Buffer.concat(chunks).toString('utf8');
+        let parsed: any;
+        try {
+          parsed = JSON.parse(data);
+        } catch (err) {
+          throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        
         const rows = Array.isArray(parsed) ? parsed : [parsed];
         emitProgress(fileSize, true);
         source = Readable.from(rows);
