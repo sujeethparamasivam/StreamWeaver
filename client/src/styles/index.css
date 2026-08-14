@@ -32,6 +32,21 @@ body::before {
 
 * {
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  caret-color: transparent;
+}
+
+/* Allow text selection in input and textarea fields */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  caret-color: #38bdf8;
 }
 
 ::selection {

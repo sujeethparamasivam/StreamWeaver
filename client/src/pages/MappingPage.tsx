@@ -403,7 +403,8 @@ const MappingPage = () => {
             </div>
 
             <div className="mt-5 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
-              <div className="hidden grid-cols-[1.5fr_1.4fr_0.9fr] gap-4 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[0.5fr_1.5fr_1.4fr_0.9fr] gap-4 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid">
+                <div>Select</div>
                 <div>Source field</div>
                 <div>Target field</div>
                 <div>Action</div>
@@ -412,44 +413,52 @@ const MappingPage = () => {
               <div className="max-h-[720px] overflow-y-auto">
                 {visibleRows.length ? visibleRows.map((row) => {
                   const expanded = expandedRows[row.source];
+                  const isSelected = row.target.trim() !== '';
                   return (
                     <div key={`${row.source}-${row.rowIndex}`} className="border-b border-white/10 px-4 py-4 last:border-none">
-                      <div className="grid gap-3 sm:grid-cols-[1.5fr_1.4fr_0.9fr] sm:items-center">
-                        <div>
-                          <div className="font-medium text-white">{row.source}</div>
+                      <div className="grid gap-3 sm:grid-cols-[0.5fr_1.5fr_1.4fr_0.9fr] sm:items-center">
+                        <div className="flex items-center justify-center">
+                          <input
+                            type="radio"
+                            id={`select-${row.rowIndex}`}
+                            checked={isSelected}
+                            onChange={(event) => {
+                              if (event.target.checked) {
+                                updateMappingRow(row.rowIndex, { target: row.source });
+                              } else {
+                                updateMappingRow(row.rowIndex, { target: '' });
+                              }
+                            }}
+                            className="h-5 w-5 cursor-pointer accent-cyan-400"
+                          />
                         </div>
                         <div>
-                          <label htmlFor={`targetSelect-${row.rowIndex}`} className="sr-only">Target field</label>
-                          <select
-                            id={`targetSelect-${row.rowIndex}`}
-                            value={row.target}
-                            onChange={(event) => updateMappingRow(row.rowIndex, { target: event.target.value })}
-                            className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                          >
-                            <option value="">None / Do not map</option>
-                            {targetOptions.map((option) => {
-                              const isSelectedElsewhere = option !== row.target && selectedTargets.has(option);
-                              return (
-                                <option key={option} value={option} disabled={isSelectedElsewhere}>
-                                  {option}
-                                </option>
-                              );
-                            })}
-                          </select>
+                          <label htmlFor={`select-${row.rowIndex}`} className="font-medium text-white cursor-pointer">
+                            {row.source}
+                          </label>
+                        </div>
+                        <div>
+                          {isSelected && (
+                            <div className="rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100">
+                              {row.target}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center justify-between gap-3 sm:justify-end">
-                          <button
-                            type="button"
-                            onClick={() => toggleRowExpansion(row.source)}
-                            className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-sm text-slate-100 transition hover:bg-slate-900"
-                          >
-                            {expanded ? 'Hide transform' : 'Advanced'}
-                          </button>
+                          {isSelected && (
+                            <button
+                              type="button"
+                              onClick={() => toggleRowExpansion(row.source)}
+                              className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-sm text-slate-100 transition hover:bg-slate-900"
+                            >
+                              {expanded ? 'Hide transform' : 'Advanced'}
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {expanded && (
-                        <div className="mt-4 sm:col-span-3">
+                      {expanded && isSelected && (
+                        <div className="mt-4 sm:col-span-4">
                           <textarea
                             value={row.transformCode ?? ''}
                             onChange={(event) => updateMappingRow(row.rowIndex, { transformCode: event.target.value })}

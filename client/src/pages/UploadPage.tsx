@@ -40,19 +40,8 @@ const UploadPage = () => {
     const file = acceptedFiles[0];
     setError('');
 
-    const supportedMimeTypes = [
-      'text/csv',
-      'application/csv',
-      'application/json',
-      'application/octet-stream',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel.sheet.macroenabled.12'
-    ];
-    const supportedExtensions = /\.(csv|json|xls|xlsx|xlsm)$/i;
-
-    if (!supportedMimeTypes.includes(file.type) && !supportedExtensions.test(file.name)) {
-      setError('Only CSV, JSON, XLS, XLSX, and XLSM files are supported.');
+    if (!['text/csv', 'application/json', 'application/octet-stream'].includes(file.type) && !/\.(csv|json)$/i.test(file.name)) {
+      setError('Only CSV and JSON files are supported.');
       return;
     }
 
@@ -119,17 +108,7 @@ const UploadPage = () => {
     }
   };
 
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop,
-    multiple: false,
-    accept: {
-      'text/csv': ['.csv'],
-      'application/json': ['.json'],
-      'application/vnd.ms-excel': ['.xls'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel.sheet.macroenabled.12': ['.xlsm']
-    }
-  });
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({ onDrop, multiple: false, accept: { 'text/csv': ['.csv'], 'application/json': ['.json'] } });
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
@@ -153,8 +132,8 @@ const UploadPage = () => {
           <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
             <div {...getRootProps()} className="min-h-[280px] rounded-[28px] border-2 border-dashed border-cyan-500/30 bg-slate-950/80 p-10 text-center transition hover:border-cyan-400 hover:bg-slate-900">
               <input {...getInputProps()} />
-              <p className="text-xl font-semibold text-white">{isDragActive ? 'Drop your dataset here' : 'Drag & drop a CSV, JSON, or Excel file'}</p>
-              <p className="mt-3 text-sm text-slate-400">Accepted formats: CSV, JSON, XLS, XLSX, XLSM. Streaming mode protects RAM and scales effortlessly.</p>
+              <p className="text-xl font-semibold text-white">{isDragActive ? 'Drop your dataset here' : 'Drag & drop a CSV or JSON file'}</p>
+              <p className="mt-3 text-sm text-slate-400">Accepted formats: CSV, JSON. Streaming mode protects RAM and scales effortlessly.</p>
               <button
                 type="button"
                 onClick={(event) => {
