@@ -40,6 +40,7 @@ const CleaningPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [uploadId, setUploadId] = useState('');
+  const [importJobs, setImportJobs] = useState<Array<{ uploadId: string; fileName: string; status: string }>>([]);
   const [columns, setColumns] = useState<MissingColumnSummary[]>([]);
   const [summary, setSummary] = useState<MissingDataSummary | null>(null);
   const [strategies, setStrategies] = useState<Record<string, ColumnStrategy>>({});
@@ -49,6 +50,19 @@ const CleaningPage = () => {
   const [message, setMessage] = useState('');
   const [fieldSearch, setFieldSearch] = useState('');
   const [showAllColumns, setShowAllColumns] = useState(false);
+
+  useEffect(() => {
+    const loadImportJobs = async () => {
+      try {
+        const response = await api.get('/imports');
+        setImportJobs(response.data.jobs ?? []);
+      } catch {
+        // Ignore import history failures.
+      }
+    };
+
+    void loadImportJobs();
+  }, []);
 
   useEffect(() => {
     const idFromQuery = searchParams.get('uploadId') ?? '';
@@ -106,6 +120,11 @@ const CleaningPage = () => {
       ...current,
       [column]: { ...current[column], fillValue }
     }));
+  };
+
+  const handleSelectDataset = (value: string) => {
+    if (!value) return;
+    navigate(`/cleaning?uploadId=${value}`);
   };
 
   const applyStrategy = async (column: string) => {
@@ -186,6 +205,33 @@ const CleaningPage = () => {
           </div>
         </div>
       </section>
+
+      <div className="mt-4">
+        <label htmlFor="datasetSelect" className="block text-sm font-medium text-slate-300">Select dataset</label>
+        <div className="mt-2 flex gap-2">
+          <select
+            id="datasetSelect"
+            value={uploadId}
+            onChange={(event) => handleSelectDataset(event.target.value)}
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+          >
+            <option value="">Choose a dataset</option>
+            {importJobs.map((job) => (
+              <option key={job.uploadId} value={job.uploadId}>
+                {job.fileName} {job.status !== 'completed' ? `(${job.status})` : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => handleSelectDataset(uploadId)}
+            disabled={!uploadId}
+            className="rounded-full border border-white/10 bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Load dataset
+          </button>
+        </div>
+      </div>
 
       {!uploadId && (
         <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 text-slate-300">

@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs, { createReadStream, unlink } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
 import { parse } from 'csv-parse';
+import * as XLSX from 'xlsx';
 // stream-json does not ship TypeScript declarations for the streamer paths.
 // Silence the compiler here and treat as any at runtime.
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -24,6 +25,23 @@ const PREVIEW_LIMIT = 1000;
 const PROGRESS_THROTTLE_MS = Number(process.env.PROGRESS_THROTTLE_MS ?? '300');
 
 type NumberedRecord = { rowNumber: number; data: Record<string, unknown> };
+
+const SUPPORTED_UPLOAD_EXTENSIONS = new Set(['.csv', '.json', '.xls', '.xlsx', '.xlsm']);
+const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/json',
+  'application/ld+json',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel.sheet.macroenabled.12'
+]);
+
+const isSupportedUploadFile = (fileName: string, mimeType?: string) => {
+  const extension = path.extname(fileName).toLowerCase();
+  if (SUPPORTED_UPLOAD_EXTENSIONS.has(extension)) return true;
+  return !!mimeType && SUPPORTED_UPLOAD_MIME_TYPES.has(mimeType.toLowerCase());
+};
 
 // pending emit maps for coalescing progress events per uploadId
 const pendingEmitTimers = new Map<string, NodeJS.Timeout>();
@@ -201,6 +219,11 @@ router.post('/', requireAuth, upload.single('file'), async (req: AuthedRequest, 
   const fileName = req.file.originalname;
   const fileSize = req.file.size;
 
+  if (!isSupportedUploadFile(fileName, req.file.mimetype)) {
+    await unlink(filePath, () => undefined);
+    return res.status(400).json({ message: 'Unsupported file type. Supported types: CSV, JSON, XLS, XLSX, XLSM.' });
+  }
+
   // The client generates this id and joins the matching Socket.IO room
   // *before* the upload starts, so progress can be streamed back live.
   const uploadId = (typeof req.body.clientUploadId === 'string' && req.body.clientUploadId.trim())
@@ -342,21 +365,72 @@ function scheduleMemorySample(uploadId: string, sample: any) {
         .pipe(byteCounter)
         .pipe(parse({ columns: true, skip_empty_lines: true }));
     } else if (extension === '.json') {
-      const jsonParser = streamArray();
-      const valueTransform = new Transform({
-        objectMode: true,
-        transform(chunk, _encoding, callback) {
-          callback(null, (chunk as any).value);
+      // Detect whether the JSON file is an array (streamable by StreamArray)
+      // or a top-level object. StreamArray requires a top-level array and
+      // will emit an error otherwise — detect first non-whitespace char and
+      // choose the appropriate parsing strategy to avoid an uncaught error.
+      const headBuf = Buffer.alloc(1024);
+      let firstChar = '';
+      try {
+        const fh = await fs.promises.open(filePath, 'r');
+        const { bytesRead } = await fh.read(headBuf, 0, headBuf.length, 0);
+        await fh.close();
+        const headStr = headBuf.slice(0, bytesRead).toString('utf8');
+        const m = headStr.match(/\S/);
+        firstChar = m ? m[0] : '';
+      } catch (err) {
+        firstChar = '';
+      }
+
+      if (firstChar === '[') {
+        const jsonParser = streamArray();
+        const valueTransform = new Transform({
+          objectMode: true,
+          transform(chunk, _encoding, callback) {
+            callback(null, (chunk as any).value);
+          }
+        });
+
+        source = createReadStream(filePath)
+          .pipe(new ByteCounterStream((bytesRead) => emitProgress(bytesRead)))
+          .pipe(jsonParser)
+          .pipe(valueTransform);
+      } else {
+        // Fallback: read entire JSON file and emit as array of records.
+        // This supports top-level objects and NDJSON where the file is small
+        // enough to parse in memory. For very large top-level objects this
+        // may be memory-heavy, but it prevents the server from crashing.
+        const data = await fs.promises.readFile(filePath, 'utf8');
+        let parsed: any;
+        try {
+          parsed = JSON.parse(data);
+        } catch (err) {
+          throw err;
         }
+
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        emitProgress(fileSize, true);
+        source = Readable.from(rows);
+      }
+    } else if (['.xls', '.xlsx', '.xlsm'].includes(extension)) {
+      const workbook = XLSX.readFile(filePath);
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+      if (!sheet) {
+        throw new Error('Excel file has no readable sheets');
+      }
+
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: '',
+        raw: false,
+        blankrows: false
       });
 
-      source = createReadStream(filePath)
-        .pipe(new ByteCounterStream((bytesRead) => emitProgress(bytesRead)))
-        .pipe(jsonParser)
-        .pipe(valueTransform);
+      emitProgress(fileSize, true);
+      source = Readable.from(rows);
     } else {
       await ImportJob.findByIdAndUpdate(job._id, { status: 'failed', finishedAt: new Date() });
-      return res.status(400).json({ message: 'Unsupported file type' });
+      return res.status(400).json({ message: 'Unsupported file type. Supported types: CSV, JSON, XLS, XLSX, XLSM.' });
     }
 
     const numbered = source.pipe(new RowNumberingStream());

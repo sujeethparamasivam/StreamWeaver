@@ -24,29 +24,63 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const token = localStorage.getItem('streamweaver-token');
+    const savedUser = localStorage.getItem('streamweaver-user');
+
     if (token) {
       axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-      setUser({ id: 'demo', name: 'Demo User', email: 'demo@streamweaver.com', role: 'user' });
     }
+
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        localStorage.removeItem('streamweaver-user');
+        setUser(null);
+      }
+    } else if (token) {
+      try {
+        const base64Payload = token.split('.')[1];
+        if (base64Payload) {
+          const payload = JSON.parse(atob(base64Payload.replace(/-/g, '+').replace(/_/g, '/')));
+          setUser({
+            id: payload.id || 'user',
+            name: payload.name || payload.email || 'User',
+            email: payload.email || '',
+            role: payload.role || 'user'
+          });
+        }
+      } catch {
+        setUser(null);
+      }
+    } else {
+      setUser(null);
+    }
+
     setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     const response = await axios.post('/api/auth/login', { email, password });
+    const user = response.data.user;
     localStorage.setItem('streamweaver-token', response.data.token);
+    localStorage.setItem('streamweaver-user', JSON.stringify(user));
     axios.defaults.headers.common.Authorization = `Bearer ${response.data.token}`;
-    setUser(response.data.user);
+    setUser(user);
   };
 
   const register = async (name: string, email: string, password: string) => {
     const response = await axios.post('/api/auth/register', { name, email, password });
+    const user = response.data.user;
     localStorage.setItem('streamweaver-token', response.data.token);
+    localStorage.setItem('streamweaver-user', JSON.stringify(user));
     axios.defaults.headers.common.Authorization = `Bearer ${response.data.token}`;
-    setUser(response.data.user);
+    setUser(user);
   };
 
   const logout = () => {
     localStorage.removeItem('streamweaver-token');
+    localStorage.removeItem('streamweaver-user');
+    delete axios.defaults.headers.common.Authorization;
     setUser(null);
   };
 

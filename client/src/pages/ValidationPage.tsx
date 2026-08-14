@@ -27,8 +27,8 @@ const ValidationPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<{ totalRecords: number; totalErrors: number; totalWarnings: number }>({ totalRecords: 0, totalErrors: 0, totalWarnings: 0 });
-  const [pagination, setPagination] = useState<{ page: number; limit: number; totalRecords: number; totalPages: number }>({ page: 1, limit: 1000, totalRecords: 0, totalPages: 0 });
-  const pageSizeOptions = [100, 500, 1000];
+  const [pagination, setPagination] = useState<{ page: number; limit: number; totalRecords: number; totalPages: number }>({ page: 1, limit: 500, totalRecords: 0, totalPages: 0 });
+  const pageSizeOptions = [200, 500, 1000];
 
   const loadValidations = async (page = 1, limit = 1000, currentUploadId = uploadId) => {
     if (!currentUploadId) {
