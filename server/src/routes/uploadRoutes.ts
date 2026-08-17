@@ -16,6 +16,7 @@ import ImportJob from '../models/ImportJob';
 import ValidationRecord from '../models/ValidationRecord';
 import { requireAuth, AuthedRequest } from '../middleware/authMiddleware';
 import { BatchTransformStream, RowNumberingStream, ByteCounterStream } from '../streams/batchTransformStream';
+import { NDJSONParserStream, readAndParseJsonSafely, detectJsonFormat } from '../utils/streamingJsonParser';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -23,8 +24,72 @@ const upload = multer({ dest: 'uploads/' });
 const BATCH_SIZE = Number(process.env.UPLOAD_BATCH_SIZE ?? '5000');
 const PREVIEW_LIMIT = 1000;
 const PROGRESS_THROTTLE_MS = Number(process.env.PROGRESS_THROTTLE_MS ?? '300');
+const MAX_JSON_OBJECT_SIZE = 100 * 1024 * 1024; // 100 MB
 
 type NumberedRecord = { rowNumber: number; data: Record<string, unknown> };
+
+// Helper functions for JSON format detection
+const isValidJson = (str: string): boolean => {
+  try {
+    JSON.parse(str);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readFileLines = async (filePath: string, lineCount: number): Promise<string[]> => {
+  const lines: string[] = [];
+  const stream = createReadStream(filePath, { encoding: 'utf8' });
+  let buffer = '';
+
+  return new Promise((resolve, reject) => {
+    stream.on('data', (chunk: string | Buffer) => {
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      const parts = buffer.split('\n');
+      buffer = parts.pop() ?? '';
+
+      for (const line of parts) {
+        if (lines.length < lineCount) {
+          lines.push(line);
+        } else {
+          (stream as any).destroy?.();
+          resolve(lines);
+          return;
+        }
+      }
+    });
+
+    stream.on('end', () => {
+      if (buffer && lines.length < lineCount) {
+        lines.push(buffer);
+      }
+      resolve(lines);
+    });
+
+    stream.on('error', reject);
+  });
+};
+
+const isFileNdjsonFormat = async (filePath: string): Promise<boolean> => {
+  try {
+    // Read first few lines and check if each is valid JSON (NDJSON) or empty/comment
+    const lines = await readFileLines(filePath, 10);
+    if (lines.length === 0) return false;
+
+    // Check if most non-empty lines are valid JSON objects
+    const validJsonLines = lines.filter((line) => {
+      const trimmed = line.trim();
+      return trimmed === '' || trimmed.startsWith('//') || isValidJson(trimmed);
+    });
+
+    // If at least 80% of non-empty lines are valid JSON, likely NDJSON
+    const nonEmptyLines = lines.filter((line) => line.trim() !== '' && !line.trim().startsWith('//'));
+    return nonEmptyLines.length > 0 && (validJsonLines.length / nonEmptyLines.length) >= 0.8;
+  } catch {
+    return false;
+  }
+};
 
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(['.csv', '.json', '.xls', '.xlsx', '.xlsm']);
 const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
@@ -365,22 +430,11 @@ function scheduleMemorySample(uploadId: string, sample: any) {
         .pipe(byteCounter)
         .pipe(parse({ columns: true, skip_empty_lines: true }));
     } else if (extension === '.json') {
-      // Detect whether the JSON file is an array (streamable by StreamArray)
-      // or a top-level object. StreamArray requires a top-level array and
-      // will emit an error otherwise — detect first non-whitespace char and
-      // choose the appropriate parsing strategy to avoid an uncaught error.
-      const headBuf = Buffer.alloc(1024);
-      let firstChar = '';
-      try {
-        const fh = await fs.promises.open(filePath, 'r');
-        const { bytesRead } = await fh.read(headBuf, 0, headBuf.length, 0);
-        await fh.close();
-        const headStr = headBuf.slice(0, bytesRead).toString('utf8');
-        const m = headStr.match(/\S/);
-        firstChar = m ? m[0] : '';
-      } catch (err) {
-        firstChar = '';
-      }
+      // Detect JSON format (array, object, or NDJSON)
+      // Use streaming for arrays and NDJSON, safe parsing for single objects under size limit
+      const firstChar = await detectJsonFormat(filePath);
+
+      const byteCounter = new ByteCounterStream((bytesRead) => emitProgress(bytesRead));
 
       if (firstChar === '[') {
         // Streaming JSON array using stream-json
@@ -393,60 +447,59 @@ function scheduleMemorySample(uploadId: string, sample: any) {
         });
 
         source = createReadStream(filePath)
-          .pipe(new ByteCounterStream((bytesRead) => emitProgress(bytesRead)))
+          .pipe(byteCounter)
           .pipe(jsonParser)
           .pipe(valueTransform);
       } else if (firstChar === '{') {
-        // Top-level object: emit as single-item array
-        // This is not ideal for streaming but handles the case safely
-        const byteCounter = new ByteCounterStream((bytesRead) => emitProgress(bytesRead));
-        const readStream = createReadStream(filePath);
-        
-        // First, count bytes
-        readStream.pipe(byteCounter);
-        
-        // Read the full object and emit as a single item
-        const chunks: Buffer[] = [];
-        for await (const chunk of readStream) {
-          chunks.push(chunk as Buffer);
+        // Single JSON object or NDJSON format - detect if it's NDJSON by scanning
+        // If it looks like NDJSON (multiple lines with objects), use streaming parser
+        // Otherwise, load as single object with size safety check
+
+        const MAX_SAFE_OBJECT_SIZE = 100 * 1024 * 1024; // 100 MB for single objects
+
+        // Peek at file to detect NDJSON
+        const isLikelyNdjson = await isFileNdjsonFormat(filePath);
+
+        if (isLikelyNdjson) {
+          // Use streaming NDJSON parser
+          source = createReadStream(filePath)
+            .pipe(byteCounter)
+            .pipe(new NDJSONParserStream());
+        } else {
+          // Single top-level object - load with size check
+          emitProgress(fileSize, true);
+          const parsed = await readAndParseJsonSafely(createReadStream(filePath), MAX_SAFE_OBJECT_SIZE);
+          source = Readable.from([parsed]);
         }
-        
-        const data = Buffer.concat(chunks).toString('utf8');
-        let parsed: any;
-        try {
-          parsed = JSON.parse(data);
-        } catch (err) {
-          throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        
-        // Treat top-level object as single record
-        emitProgress(fileSize, true);
-        source = Readable.from([parsed]);
       } else {
-        // Unknown format - attempt to parse as JSON
-        // This handles newline-delimited JSON (NDJSON) inefficiently
-        // but allows the server to process small JSON files safely
-        const byteCounter = new ByteCounterStream((bytesRead) => emitProgress(bytesRead));
-        const readStream = createReadStream(filePath);
-        readStream.pipe(byteCounter);
-        
-        const chunks: Buffer[] = [];
-        for await (const chunk of readStream) {
-          chunks.push(chunk as Buffer);
-        }
-        
-        const data = Buffer.concat(chunks).toString('utf8');
-        let parsed: any;
+        // Unknown format - attempt NDJSON parsing; if that fails, try full JSON parse
+        const MAX_SAFE_SIZE = 100 * 1024 * 1024; // 100 MB
+
+        // Try NDJSON first
+        let isNdjson = false;
         try {
-          parsed = JSON.parse(data);
-        } catch (err) {
-          throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+          const lines = await readFileLines(filePath, 5); // Read first 5 lines
+          isNdjson = lines.every((line) => {
+            const trimmed = line.trim();
+            return trimmed === '' || trimmed.startsWith('//') || isValidJson(trimmed);
+          });
+        } catch {
+          isNdjson = false;
         }
-        
-        const rows = Array.isArray(parsed) ? parsed : [parsed];
-        emitProgress(fileSize, true);
-        source = Readable.from(rows);
+
+        if (isNdjson) {
+          source = createReadStream(filePath)
+            .pipe(byteCounter)
+            .pipe(new NDJSONParserStream());
+        } else {
+          // Try single JSON parse with size limit
+          emitProgress(fileSize, true);
+          const parsed = await readAndParseJsonSafely(createReadStream(filePath), MAX_SAFE_SIZE);
+          const rows = Array.isArray(parsed) ? parsed : [parsed];
+          source = Readable.from(rows);
+        }
       }
+
     } else if (['.xls', '.xlsx', '.xlsm'].includes(extension)) {
       const workbook = XLSX.readFile(filePath);
       const firstSheetName = workbook.SheetNames[0];

@@ -12,6 +12,10 @@ const cleanup = async () => {
     console.log('Connected to MongoDB');
     const db = mongoose.connection.db;
 
+    if (!db) {
+      throw new Error('MongoDB connection is not available');
+    }
+
     // Get all collections
     const collections = await db.listCollections().toArray();
     console.log(`\nFound ${collections.length} collections`);
@@ -20,11 +24,10 @@ const cleanup = async () => {
       const col = db.collection(collection.name);
       const count = await col.countDocuments();
       try {
-        const stats = await db.collection(collection.name).stats();
-        const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
-        console.log(`${collection.name}: ${count} docs, ${sizeInMB} MB`);
+        const stats = await col.estimatedDocumentCount();
+        console.log(`${collection.name}: ${count} docs`);
       } catch {
-        console.log(`${collection.name}: ${count} docs, size unknown`);
+        console.log(`${collection.name}: ${count} docs`);
       }
     }
 
