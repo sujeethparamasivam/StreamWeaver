@@ -69,16 +69,14 @@ const PreviewPage = () => {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Rows visible: {totals.rows}</div>
             <div className="rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200">Columns shown: {totals.columns}</div>
-            <div className="sm:col-span-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => navigate(`/validation?uploadId=${uploadId}`)}
-                disabled={!uploadId}
-                className="rounded-full border border-white/10 bg-slate-900 px-5 py-3 text-sm text-slate-100 transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Validate this dataset
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/validation?uploadId=${uploadId}`)}
+              disabled={!uploadId}
+              className="sm:col-span-2 rounded-full border-2 border-cyan-400 bg-gradient-to-r from-cyan-600 to-blue-600 px-8 py-3 text-sm font-semibold text-white transition hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-cyan-500/50"
+            >
+              ✓ Validate Dataset & View Errors
+            </button>
             {uploadId && (
               <div className="sm:col-span-2 mt-2">
                 <MemoryAudit uploadId={uploadId} />
