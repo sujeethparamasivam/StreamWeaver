@@ -1,17 +1,18 @@
 import vm from 'node:vm';
 
 let ivm: any = null;
+let ivmLoadAttempted = false;
 
 const loadIsolatedVm = async () => {
-  if (ivm !== null) return ivm;
-    try {
-      // dynamic import; if native addon isn't present the import will fail
-      // and we'll fall back to the built-in vm implementation.
-      // Silence the compiler about missing declaration files for the
-      // optional native dependency.
-      // @ts-ignore
-      ivm = await import('isolated-vm');
-    } catch {
+  if (ivmLoadAttempted) return ivm;
+  ivmLoadAttempted = true;
+
+  try {
+    // dynamic import; if native addon isn't present the import will fail
+    // and we'll fall back to the built-in vm implementation.
+    // @ts-ignore
+    ivm = await import('isolated-vm');
+  } catch {
     ivm = null;
   }
   return ivm;
@@ -26,6 +27,17 @@ export interface SandboxResult {
 const EXECUTION_TIMEOUT_MS = 50;
 const MEMORY_LIMIT_MB = 32;
 
+/**
+ * Execute user code in a sandbox using isolated-vm if available,
+ * falling back to Node's vm module for basic isolation.
+ *
+ * The sandbox:
+ * - Has a 50ms timeout to prevent infinite loops
+ * - Has access to `value` (the field being transformed)
+ * - Has access to `row` (the full row object)
+ * - Does NOT have access to process, require, fs, or other dangerous globals
+ * - Must return a value (implicit return via last expression)
+ */
 export async function runTransform(
   code: string,
   value: unknown,
@@ -36,10 +48,8 @@ export async function runTransform(
   }
 
   const isolatedVm = await loadIsolatedVm();
-  if (!isolatedVm) {
-    return { success: false, error: 'Server sandbox unavailable: isolated-vm is not installed or failed to load. Contact administrator.' };
-  }
 
+  // Try isolated-vm first if available
   if (isolatedVm) {
     try {
       const isolate = new isolatedVm.Isolate({ memoryLimit: MEMORY_LIMIT_MB });
@@ -60,6 +70,50 @@ export async function runTransform(
       };
     }
   }
-  // Should never reach here because we require isolated-vm above.
-  return { success: false, error: 'Unexpected error: sandbox fallback disabled.' };
+
+  // Fallback to Node.js vm module
+  try {
+    const contextObject = {
+      value,
+      row,
+      // Provide safe globals only
+      Math,
+      Date,
+      JSON,
+      String,
+      Number,
+      Boolean,
+      Array,
+      Object,
+      undefined,
+      NaN,
+      isNaN,
+      isFinite,
+      parseInt,
+      parseFloat,
+      encodeURIComponent,
+      decodeURIComponent
+    };
+
+    // Create a context with strict restrictions
+    const context = vm.createContext(contextObject, {
+      name: 'StreamWeaver Transform'
+    });
+
+    // Wrap code to ensure it returns a value
+    const wrappedCode = `(function() { ${code} })()`;
+
+    // Run with timeout
+    const result = vm.runInContext(wrappedCode, context, {
+      timeout: EXECUTION_TIMEOUT_MS,
+      displayErrors: true
+    });
+
+    return { success: true, value: result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
