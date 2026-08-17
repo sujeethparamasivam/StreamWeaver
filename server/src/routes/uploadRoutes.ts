@@ -116,6 +116,7 @@ const pendingEmitPayloads = new Map<string, any>();
 const rowWriteBuffers = new Map<string, any[]>();
 const rowWriteTimers = new Map<string, NodeJS.Timeout>();
 const ROW_WRITE_CONCURRENCY = Number(process.env.ROW_WRITE_CONCURRENCY ?? '3');
+const MAX_PENDING_BATCHES = 3; // Maximum pending batches before applying backpressure
 let globalActiveRowWrites = 0;
 
 async function processRowBuffer(uploadId: string) {
@@ -253,6 +254,16 @@ const writeBatch = async (batch: NumberedRecord[], fileName: string, uploadId: s
   const validationDocs = batch.flatMap(({ rowNumber, data }) =>
     validateRow(data, uploadId, rowNumber).map((doc) => ({ ...doc, createdBy: owner }))
   );
+
+  // Apply real backpressure: wait if pending batch buffer exceeds limit
+  // This ensures MongoDB slowness slows down file reading, preventing unbounded memory growth
+  const maxBufferOps = MAX_PENDING_BATCHES * BATCH_SIZE;
+  let waitIterations = 0;
+  while ((rowWriteBuffers.get(uploadId) ?? []).length > maxBufferOps && waitIterations < 300) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 50));
+    waitIterations += 1;
+  }
 
   // schedule row writes to background worker queue to bound concurrency and reduce latency
   scheduleRowWrites(uploadId, rowOps);
