@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
@@ -95,6 +95,7 @@ const normalizeMapping = (raw: unknown): Record<string, { source: string; transf
 const MappingPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<Array<Record<string, unknown>>>([]);
   const [sourceColumns, setSourceColumns] = useState<string[]>([]);
   const [mappingRows, setMappingRows] = useState<MappingRow[]>([]);
@@ -186,12 +187,41 @@ const MappingPage = () => {
   const sampleRow = preview[0] ?? {};
   const selectedJob = importJobs.find((job) => job.uploadId === uploadId);
   const oneDatasetAvailable = importJobs.length === 1;
+  
+  // Calculate isAllSelected and isSomeSelected based on mappingRows first
+  const isAllSelectedValue = mappingRows.filter((row) => row.target.trim() !== '').length === mappingRows.length && mappingRows.length > 0;
+  const isSomeSelectedValue = mappingRows.some((row) => row.target.trim() !== '');
+  
   const visibleRows = useMemo(
     () => mappingRows
       .map((row, rowIndex) => ({ ...row, rowIndex }))
       .filter((row) => row.source.toLowerCase().includes(searchFilter.toLowerCase())),
     [mappingRows, searchFilter]
   );
+  
+  const isAllSelected = visibleRows.length > 0 && visibleRows.every((row) => row.target.trim() !== '');
+  const isSomeSelected = visibleRows.some((row) => row.target.trim() !== '');
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = isSomeSelected && !isAllSelected;
+    }
+  }, [isAllSelected, isSomeSelected]);
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      const visibleSources = new Set(visibleRows.map((row) => row.source));
+      setMappingRows((current) =>
+        current.map((row) => (visibleSources.has(row.source) ? { ...row, target: '' } : row))
+      );
+    } else {
+      const visibleSources = new Set(visibleRows.map((row) => row.source));
+      setMappingRows((current) =>
+        current.map((row) => (visibleSources.has(row.source) ? { ...row, target: row.source } : row))
+      );
+    }
+  };
+
   const targetOptions = useMemo(() => {
     const targets = new Set<string>();
     mappingRows.forEach((row) => {
@@ -404,7 +434,16 @@ const MappingPage = () => {
 
             <div className="mt-5 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/70">
               <div className="hidden grid-cols-[0.5fr_1.5fr_1.4fr_0.9fr] gap-4 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-500 sm:grid">
-                <div>Select</div>
+                <div className="flex items-center justify-center">
+                  <input
+                    ref={selectAllCheckboxRef}
+                    type="checkbox"
+                    id="selectAll"
+                    checked={isAllSelected}
+                    onChange={toggleSelectAll}
+                    className="h-5 w-5 cursor-pointer accent-cyan-400"
+                  />
+                </div>
                 <div>Source field</div>
                 <div>Target field</div>
                 <div>Action</div>
