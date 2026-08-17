@@ -246,7 +246,21 @@ const CleaningPage = () => {
       {message && <div className="rounded-[32px] border border-cyan-400/20 bg-cyan-500/10 p-6 text-cyan-200">{message}</div>}
 
       {!loading && uploadId && columns.length === 0 && !error && (
-        <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 text-slate-400">No missing values detected for this upload. You can continue directly to mapping.</div>
+        <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-white font-semibold">No missing values detected</p>
+              <p className="mt-2 text-slate-400">Your dataset is clean and ready for mapping.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/mapping?uploadId=${uploadId}`)}
+              className="rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 whitespace-nowrap"
+            >
+              Continue to mapping →
+            </button>
+          </div>
+        </div>
       )}
 
       {!loading && uploadId && columns.length > 0 && (
