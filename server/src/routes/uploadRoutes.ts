@@ -466,7 +466,16 @@ function scheduleMemorySample(uploadId: string, sample: any) {
             .pipe(byteCounter)
             .pipe(new NDJSONParserStream());
         } else {
-          // Single top-level object - load with size check
+          // Single top-level object - check size first
+          if (fileSize > MAX_SAFE_OBJECT_SIZE) {
+            await unlink(filePath, () => undefined);
+            return res.status(413).json({
+              message: `Large JSON objects are not supported for memory-safe streaming. ` +
+                       `File size ${Math.round(fileSize / 1024 / 1024)}MB exceeds maximum ${Math.round(MAX_SAFE_OBJECT_SIZE / 1024 / 1024)}MB. ` +
+                       `Please upload a JSON array or convert to NDJSON format.`
+            });
+          }
+          // Load single object with size check
           emitProgress(fileSize, true);
           const parsed = await readAndParseJsonSafely(createReadStream(filePath), MAX_SAFE_OBJECT_SIZE);
           source = Readable.from([parsed]);
@@ -501,6 +510,20 @@ function scheduleMemorySample(uploadId: string, sample: any) {
       }
 
     } else if (['.xls', '.xlsx', '.xlsm'].includes(extension)) {
+      // Excel files cannot be streamed; they must be loaded entirely into memory
+      // Enforce a size limit to prevent memory exhaustion
+      const MAX_EXCEL_SIZE_MB = 100;
+      const MAX_EXCEL_BYTES = MAX_EXCEL_SIZE_MB * 1024 * 1024;
+      
+      if (fileSize > MAX_EXCEL_BYTES) {
+        await unlink(filePath, () => undefined);
+        return res.status(413).json({
+          message: `Large Excel files are not supported for memory-safe streaming. ` +
+                   `File size ${Math.round(fileSize / 1024 / 1024)}MB exceeds maximum ${MAX_EXCEL_SIZE_MB}MB. ` +
+                   `Please convert the file to CSV or NDJSON format for large datasets.`
+        });
+      }
+
       const workbook = XLSX.readFile(filePath);
       const firstSheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[firstSheetName];
