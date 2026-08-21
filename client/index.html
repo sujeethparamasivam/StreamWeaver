@@ -1,0 +1,308 @@
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <meta
+      name="description"
+      content="StreamWeaver - A modern streaming and data visualization platform"
+    />
+
+    <title>StreamWeaver</title>
+
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, #243b8f 0%, transparent 35%),
+          radial-gradient(circle at bottom right, #7b2cbf 0%, transparent 35%),
+          #080b18;
+        color: #ffffff;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      .app {
+        min-height: 100vh;
+        padding: 25px 7%;
+      }
+
+      /* Navigation */
+      .navbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 18px 25px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(15px);
+      }
+
+      .logo {
+        font-size: 24px;
+        font-weight: bold;
+        color: #6ee7ff;
+      }
+
+      .logo span {
+        color: #a855f7;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 25px;
+        list-style: none;
+      }
+
+      .nav-links a {
+        color: #dbeafe;
+        text-decoration: none;
+        transition: 0.3s;
+      }
+
+      .nav-links a:hover {
+        color: #6ee7ff;
+      }
+
+      /* Hero */
+      .hero {
+        text-align: center;
+        padding: 100px 20px 70px;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 30px;
+        background: rgba(110, 231, 255, 0.12);
+        border: 1px solid rgba(110, 231, 255, 0.3);
+        color: #6ee7ff;
+        margin-bottom: 25px;
+      }
+
+      .hero h1 {
+        font-size: clamp(45px, 8vw, 80px);
+        line-height: 1.05;
+        margin-bottom: 20px;
+      }
+
+      .gradient-text {
+        background: linear-gradient(90deg, #6ee7ff, #a855f7, #ec4899);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .hero p {
+        max-width: 650px;
+        margin: auto;
+        color: #aab4d4;
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      /* Buttons */
+      .buttons {
+        margin-top: 35px;
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        padding: 13px 25px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: bold;
+        transition: 0.3s;
+      }
+
+      .btn-primary {
+        background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+        color: white;
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 0 35px rgba(139, 92, 246, 0.6);
+      }
+
+      .btn-secondary {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      /* Features */
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+        margin-bottom: 70px;
+      }
+
+      .feature-card {
+        padding: 30px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(12px);
+        transition: 0.3s;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-8px);
+        border-color: rgba(110, 231, 255, 0.5);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+      }
+
+      .icon {
+        font-size: 35px;
+        margin-bottom: 18px;
+      }
+
+      .feature-card h3 {
+        margin-bottom: 10px;
+        color: #ffffff;
+      }
+
+      .feature-card p {
+        color: #9ca8c7;
+        line-height: 1.6;
+      }
+
+      /* Footer */
+      footer {
+        text-align: center;
+        padding: 30px;
+        color: #7783a5;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      /* Mobile */
+      @media (max-width: 600px) {
+        .app {
+          padding: 15px;
+        }
+
+        .nav-links {
+          display: none;
+        }
+
+        .hero {
+          padding-top: 70px;
+        }
+
+        .hero p {
+          font-size: 16px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root">
+      <div class="app">
+
+        <nav class="navbar">
+          <div class="logo">
+            Stream<span>Weaver</span>
+          </div>
+
+          <ul class="nav-links">
+            <li><a href="#">Home</a></li>
+            <li><a href="#">Features</a></li>
+            <li><a href="#">About</a></li>
+            <li><a href="#">Contact</a></li>
+          </ul>
+        </nav>
+
+        <section class="hero">
+          <div class="badge">⚡ Modern Streaming Platform</div>
+
+          <h1>
+            Build.
+            <span class="gradient-text">Stream.</span>
+            Analyze.
+          </h1>
+
+          <p>
+            StreamWeaver helps you manage, process and visualize
+            real-time data streams with a clean and powerful interface.
+          </p>
+
+          <div class="buttons">
+            <a href="#" class="btn btn-primary">Get Started</a>
+            <a href="#" class="btn btn-secondary">Explore Features</a>
+          </div>
+        </section>
+
+        <section class="features">
+
+          <div class="feature-card">
+            <div class="icon">⚡</div>
+            <h3>Real-Time Streaming</h3>
+            <p>
+              Process incoming data quickly and monitor your streams
+              in real time.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="icon">📊</div>
+            <h3>Data Visualization</h3>
+            <p>
+              Turn complex streaming data into simple and useful
+              visual insights.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="icon">🔒</div>
+            <h3>Secure Platform</h3>
+            <p>
+              Keep your streaming workflows protected with
+              reliable security features.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="icon">🚀</div>
+            <h3>High Performance</h3>
+            <p>
+              Designed for fast processing and smooth performance
+              as your data grows.
+            </p>
+          </div>
+
+        </section>
+
+        <footer>
+          © 2026 StreamWeaver · Built for modern data streaming
+        </footer>
+
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```

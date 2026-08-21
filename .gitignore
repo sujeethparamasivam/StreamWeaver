@@ -1,0 +1,22 @@
+node_modules
+
+# Local build output
+client/dist/
+server/dist/
+
+# TypeScript build info
+client/tsconfig.node.tsbuildinfo
+client/tsconfig.tsbuildinfo
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Local upload/test files
+server/tmp/
+server/uploads/
+tmp/
+
+# Generated test data
+test-data-*.csv
