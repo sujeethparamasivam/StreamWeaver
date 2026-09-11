@@ -177,14 +177,14 @@ const applyMapping = async (row: Record<string, unknown>, mapping: Record<string
 router.post('/:uploadId/transform', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
-    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email) }).lean();
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }).lean();
     if (!job) return res.status(404).json({ message: 'Import not found' });
     if (!job.mapping || !Object.keys(job.mapping).length) {
       return res.status(400).json({ message: 'Mapping must be saved before transformation' });
     }
 
     const mapping = normalizeMapping(job.mapping);
-    const cursor = UploadRow.find({ uploadId }).sort({ rowNumber: 1 }).cursor();
+    const cursor = UploadRow.find({ uploadId }).sort({ rowNumber: 1 }).allowDiskUse(true).cursor();
     await TransformedRow.deleteMany({ uploadId });
 
     const io = req.app.get('io');
@@ -252,13 +252,14 @@ router.post('/:uploadId/transform', async (req: AuthedRequest, res: Response) =>
       sandboxErrors: sandboxErrors.slice(0, 20)
     });
   } catch (error) {
+    console.error('Transform error for uploadId:', req.params.uploadId, error);
     res.status(500).json({ message: 'Could not transform rows', error: String(error) });
   }
 });
 router.post('/:uploadId/import', async (req: AuthedRequest, res: Response) => {
   try {
     const { uploadId } = req.params;
-    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email) }).lean();
+    const job = await ImportJob.findOne({ uploadId, ...createJobFilter(req.user?.email, req.user?.id) }).lean();
     if (!job) return res.status(404).json({ message: 'Import not found' });
 
     const totalRows = await TransformedRow.countDocuments({ uploadId });
@@ -266,7 +267,7 @@ router.post('/:uploadId/import', async (req: AuthedRequest, res: Response) => {
       return res.status(404).json({ message: 'No transformed rows available for import' });
     }
 
-    const cursor = TransformedRow.find({ uploadId }).sort({ rowNumber: 1 }).cursor();
+    const cursor = TransformedRow.find({ uploadId }).sort({ rowNumber: 1 }).allowDiskUse(true).cursor();
     await ImportedRow.deleteMany({ uploadId });
 
     const io = req.app.get('io');
